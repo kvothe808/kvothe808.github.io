@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "io.github.kvothe808.twa",
+    "sha256_cert_fingerprints": ["C6:82:B2:7F:EC:75:5A:AB:85:82:D0:B2:1E:0A:A4:42:DA:83:A3:72:DB:8D:B1:30:1C:2D:87:29:14:8F:76:9C"]
+  }
+}]
