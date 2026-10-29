@@ -5,4 +5,12 @@
     "package_name": "io.github.kvothe808.twa",
     "sha256_cert_fingerprints": ["C6:82:B2:7F:EC:75:5A:AB:85:82:D0:B2:1E:0A:A4:42:DA:83:A3:72:DB:8D:B1:30:1C:2D:87:29:14:8F:76:9C"]
   }
+},
+{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "io.github.kvothe808.cau",
+    "sha256_cert_fingerprints": ["F9:3F:FD:13:B8:F2:75:E0:E6:45:34:D9:60:01:5D:05:05:2E:3B:B1:BB:4E:F6:16:84:CA:18:0B:0E:6A:F9:5E"]
+  }
 }]
