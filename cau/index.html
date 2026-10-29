@@ -1,0 +1,1122 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1b080d">
+<meta name="description" content="El Cau, el joc de cartes de les filaes d'Alcoi: juega con tu compañera contra dos rivales.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+html{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);background:#1b080d}
+body{margin:0;font:14px/1.4 system-ui,sans-serif}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<title>Cau d'Alcoi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+SC:wght@500;700;800&family=Alegreya+Sans:wght@400;500;700;800&display=swap">
+<style>
+/* Layout: una mesa de juego a pantalla completa — marcador arriba, compañera enfrente, rivales a los lados, tapete granate al centro y tu mano abajo */
+:root{
+  --bg:#1b080d; --felt:#5a1b27; --felt-deep:#2b0a11; --panel:#2a0d14; --seat:#3a121b;
+  --ink:#f4ead8; --ink-soft:#c8b29a; --line:rgba(244,234,216,.16);
+  --gold:#e3b24f; --gold-ink:#2a1206; --rival:#e38f7c;
+  --f-display:"Alegreya SC", "Palatino Linotype", Georgia, serif;
+  --f-body:"Alegreya Sans", "Segoe UI", system-ui, sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.35;overflow:hidden;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+#app{height:100%;max-width:620px;margin:0 auto;display:flex;flex-direction:column;gap:7px;padding-block:8px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+.bar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px}
+.score{display:flex;flex-direction:column;gap:3px;line-height:1}
+.score.them{align-items:flex-end}
+.lbl{font-weight:700;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft)}
+.score b{font:800 30px/1 var(--f-display);font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:5px}
+.score b small{font:700 13px var(--f-body);letter-spacing:.02em}
+.score.us b{color:var(--gold)} .score.them b{color:var(--rival)}
+.mid{text-align:center}
+.brand{font:800 24px/1 var(--f-display);letter-spacing:.05em}
+.info{font-size:12px;color:var(--ink-soft);margin-top:3px;font-variant-numeric:tabular-nums}
+
+.tools{display:flex;gap:6px;justify-content:center;flex-wrap:wrap}
+.btn{font-weight:700;font-size:13px;background:rgba(244,234,216,.06);border:1px solid var(--line);border-radius:999px;padding:6px 13px;cursor:pointer;color:var(--ink)}
+.btn:hover{background:rgba(244,234,216,.12)}
+.btn.primary{background:var(--gold);color:var(--gold-ink);border-color:var(--gold)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.warn{border-color:var(--rival);color:var(--rival)}
+.btn.sing{background:var(--gold);color:var(--gold-ink);border-color:var(--gold);font-size:15px;padding:8px 18px;animation:glow 1.6s ease-in-out infinite}
+
+.board{flex:1;min-height:0;display:flex;flex-direction:column;gap:6px}
+.row{flex:1;min-height:0;display:grid;grid-template-columns:72px minmax(0,1fr) 72px;gap:6px}
+.felt{position:relative;min-height:0;border-radius:20px;background:radial-gradient(ellipse at 50% 40%,var(--felt),var(--felt-deep) 78%);box-shadow:inset 0 0 0 1px rgba(227,178,79,.28),inset 0 0 0 7px rgba(0,0,0,.12),inset 0 0 50px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:14px 10px;overflow:hidden}
+.felt::before{content:"";position:absolute;inset:7px;border-radius:14px;border:1px dashed rgba(227,178,79,.18);pointer-events:none}
+.table{--cw:clamp(46px,13.5vw,64px);position:absolute;inset:10px}
+.slot{position:absolute;width:var(--cw);height:calc(var(--cw)*1.5);transform:translate(-50%,-50%) rotate(var(--rot,0deg))}
+.slot>.card,.slot>.stk{position:absolute;left:0;top:0}
+.empty{position:absolute;inset:0;display:grid;place-items:center;color:rgba(244,234,216,.4);font:500 14px var(--f-display);letter-spacing:.08em}
+.fly{position:fixed;z-index:15;pointer-events:none;display:flex;left:0;top:0}
+.fly .back+.back{margin-left:-30px}
+
+.seat{display:flex;align-items:center;gap:8px;color:var(--ink-soft);font-size:13px;border-radius:14px;padding:4px 8px;transition:background .3s}
+.seat.top{justify-content:center;min-height:52px}
+.seat.side{flex-direction:column;justify-content:center;text-align:center;gap:5px;padding:6px 2px}
+.seat.turn{background:rgba(227,178,79,.13);color:var(--ink)}
+.av{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:700 15px var(--f-display);background:var(--seat);border:1.5px solid var(--rival);color:var(--ink)}
+.av.us{border-color:var(--gold)}
+.seat.turn .av{box-shadow:0 0 0 4px rgba(227,178,79,.35)}
+.who{display:flex;flex-direction:column;gap:1px;line-height:1.15}
+.seat.side .who{align-items:center}
+.nm{font-weight:700;color:var(--ink)}
+.sub{font-size:11px;color:var(--ink-soft)}
+.backs{display:flex;min-height:58px}
+.back{flex:none;width:39px;height:58px;border-radius:5px;background:radial-gradient(circle at 50% 50%,#e3b24f 0 4px,transparent 4.5px),repeating-linear-gradient(45deg,#7d2333 0 5px,#5a1623 5px 10px);border:1.5px solid #e3b24f;box-shadow:inset 0 0 0 2px #5a1623,0 3px 6px rgba(0,0,0,.45)}
+.deck-clasica .back{background:url(classic.webp) 0% 100% / 1000% 500% no-repeat;border:0;box-shadow:0 3px 6px rgba(0,0,0,.45)}
+.back+.back{margin-left:-16px}
+.seat.side .backs{flex-direction:column;align-items:center;min-height:0}
+.seat.side .back{width:56px;height:38px;background-size:auto}
+.deck-clasica .seat.side .back{background:url(classic.webp) 0% 100% / 1000% 500% no-repeat;width:38px;height:58px}
+.seat.side .back+.back{margin-left:0;margin-top:-22px}
+.deck-clasica .seat.side .back+.back{margin-top:-40px}
+.bubble{font-size:11px;font-weight:800;color:var(--gold);min-height:14px;letter-spacing:.02em}
+.dealer{font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);border:1px solid rgba(227,178,79,.5);border-radius:999px;padding:1px 5px}
+
+/* Cartas españolas dibujadas en SVG */
+.card{--cw:56px;width:var(--cw);height:calc(var(--cw)*1.5);flex:none;border-radius:calc(var(--cw)*.1);position:relative;box-shadow:0 2px 0 rgba(0,0,0,.25),0 6px 14px rgba(0,0,0,.38);transition:transform .25s,box-shadow .25s;user-select:none}
+.card svg{display:block;width:100%;height:100%}
+.card.cl{background:url(classic.webp) no-repeat;background-size:1000% 500%}
+.pair{display:flex;align-items:flex-start;flex:none}
+.pair .card+.card{margin-left:calc(var(--cw)*-.55);margin-top:calc(var(--cw)*.28)}
+.chain .card.incoming{margin-top:calc(var(--cw)*.28)}
+.card.incoming{animation:drop .45s ease-out}
+.card.taking{transform:translateY(-6px) scale(1.05);box-shadow:0 0 0 3px var(--gold),0 10px 20px rgba(0,0,0,.45)}
+.card.reserved{box-shadow:0 0 0 2px var(--felt-deep),0 0 0 4px var(--gold)}
+.card.last{box-shadow:0 0 0 2px rgba(244,234,216,.6),0 6px 14px rgba(0,0,0,.38)}
+.chain{display:flex;align-items:center;padding:12px 10px 8px;border:1.5px solid var(--gold);border-radius:12px;background:rgba(0,0,0,.22);position:relative}
+.chain .card+.card{margin-left:calc(var(--cw)*-.55)}
+.chain-lbl{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--gold);color:var(--gold-ink);font-weight:800;font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:2px 7px;border-radius:999px;white-space:nowrap}
+
+.callout{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:3}
+.call{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 22px;border-radius:16px;background:rgba(27,8,13,.78);animation:pop var(--cd,1.6s) ease-out both;text-align:center}
+.call b{font:800 clamp(30px,10vw,46px)/1 var(--f-display);color:var(--gold);text-shadow:0 3px 0 #2a0a10}
+.call span{font-size:13px;font-weight:700;color:var(--ink)}
+
+.narr{text-align:center;font-size:13.5px;color:var(--ink);min-height:20px;line-height:1.3}
+.narr b{color:var(--gold)}
+.you{display:flex;flex-direction:column;gap:6px;padding-bottom:2px}
+.hand{display:flex;gap:12px;justify-content:center;min-height:calc(clamp(66px,20vw,86px)*1.5 + 26px)}
+.hc{background:none;border:0;padding:0;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;border-radius:10px}
+.hc .card{--cw:clamp(66px,20vw,86px)}
+.hc:not(:disabled):hover .card{transform:translateY(-8px)}
+.hc:disabled{cursor:default}
+.hc:disabled .card{filter:saturate(.8) brightness(.88)}
+.hint{font-size:11px;font-weight:800;letter-spacing:.03em;padding:2px 8px;border-radius:999px;background:rgba(244,234,216,.08);color:var(--ink-soft);white-space:nowrap}
+.hint.cap{background:rgba(244,234,216,.18);color:var(--ink)}
+.hint.big{background:var(--gold);color:var(--gold-ink)}
+.status{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;text-align:center;min-height:24px;font-size:14px;color:var(--ink-soft)}
+.status b{color:var(--ink)}
+.status.mine b{color:var(--gold)}
+
+.nit{border:1px solid rgba(227,178,79,.5);background:var(--panel);border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:10px;text-align:center}
+.nit h3{margin:0;font:800 18px var(--f-display);color:var(--gold);letter-spacing:.04em}
+.nit p{margin:0;font-size:14px}
+.nit .acts{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+
+.overlay{position:fixed;inset:0;background:rgba(10,3,5,.72);display:flex;align-items:flex-end;justify-content:center;z-index:20;padding:16px max(16px,env(safe-area-inset-right,0px)) calc(16px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+@media (min-height:640px){.overlay{align-items:center}}
+.panel{background:var(--panel);border:1px solid rgba(227,178,79,.35);border-radius:20px;max-width:560px;width:100%;max-height:100%;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:14px}
+.panel h2{margin:0;font:800 26px/1.1 var(--f-display);text-wrap:balance}
+.panel h3{margin:6px 0 0;font:800 16px var(--f-display);color:var(--gold);letter-spacing:.05em}
+.panel p,.panel li{font-size:14.5px;max-width:65ch}
+.panel p{margin:0}
+.panel ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.panel .acts{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.pts{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.pts div{border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+.pts b{display:block;font:800 18px var(--f-display);color:var(--gold)}
+.pts span{font-size:13px;color:var(--ink-soft)}
+.sum{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:14px}
+.sum th,.sum td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:right}
+.sum th:first-child,.sum td:first-child{text-align:left;color:var(--ink-soft)}
+.sum thead th{font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+.sum thead th.us{color:var(--gold)} .sum thead th.them{color:var(--rival)}
+.sum tr.tot td{font-weight:800;color:var(--ink);border-bottom:0;font-size:16px}
+.big-result{font:800 20px var(--f-display);text-align:center;color:var(--gold)}
+.log{list-style:none;padding:0 !important;margin:0;display:flex;flex-direction:column;gap:2px !important;font-size:13.5px}
+.log li{padding:4px 0;border-bottom:1px solid var(--line)}
+.log li.hand{color:var(--gold);font-weight:700;padding-top:10px}
+.menu{align-items:stretch;text-align:center}
+.menu .logo{font:800 56px/1 var(--f-display);color:var(--gold);letter-spacing:.04em;text-shadow:0 3px 0 #120408}
+.menu .tag{color:var(--ink-soft);font-size:14px;margin:-6px auto 4px}
+.menu .stack{display:flex;flex-direction:column;gap:10px}
+.menu .stack .btn{font-size:16px;padding:12px 18px}
+.opt{display:flex;flex-direction:column;gap:6px}
+.opt label{font-weight:700;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft)}
+.opt .desc{font-size:13px;color:var(--ink-soft)}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--line);border-radius:999px;padding:3px;background:rgba(0,0,0,.2)}
+.seg.two{grid-template-columns:repeat(2,1fr)}
+.seg button{border:0;background:none;border-radius:999px;padding:7px 6px;font-weight:700;font-size:14px;cursor:pointer;color:var(--ink-soft)}
+.seg button[aria-pressed="true"]{background:var(--gold);color:var(--gold-ink)}
+
+@keyframes drop{from{transform:translateY(-22px) scale(.9);opacity:0}to{transform:none;opacity:1}}
+@keyframes pop{0%{transform:scale(.6);opacity:0}12%{transform:scale(1.08);opacity:1}20%{transform:scale(1)}85%{opacity:1}100%{opacity:0}}
+@keyframes glow{0%,100%{box-shadow:0 0 0 0 rgba(227,178,79,.55)}50%{box-shadow:0 0 0 7px rgba(227,178,79,0)}}
+@media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important}}
+@media (max-height:660px){.brand{font-size:20px}.score b{font-size:25px}.tools .btn{padding:4px 11px}.seat.top{min-height:44px}}
+</style>
+</head>
+<body>
+
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="su-0" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16.5" fill="#e2b23c" stroke="#8a6410" stroke-width="2"/><circle cx="20" cy="20" r="11" fill="#f0cd62" stroke="#8a6410" stroke-width="1.4"/><circle cx="20" cy="20" r="6" fill="none" stroke="#8a6410" stroke-width="1.2"/><circle cx="20" cy="20" r="2.4" fill="#8a6410"/></symbol>
+    <symbol id="su-1" viewBox="0 0 40 40"><path d="M8 6.5h24c0 11-5 16-12 17C13 22.5 8 17.5 8 6.5z" fill="#c0392b" stroke="#6e1a16" stroke-width="1.2"/><rect x="7.5" y="4.5" width="25" height="3.4" rx="1.6" fill="#e2b23c" stroke="#8a6410" stroke-width=".9"/><rect x="18" y="22.5" width="4" height="9" fill="#e2b23c" stroke="#8a6410" stroke-width=".9"/><ellipse cx="20" cy="33.5" rx="9" ry="3.2" fill="#e2b23c" stroke="#8a6410" stroke-width=".9"/></symbol>
+    <symbol id="su-2" viewBox="0 0 40 40"><path d="M20 1.5l3.4 24.5h-6.8z" fill="#c6d5e8" stroke="#24497e" stroke-width="1.1"/><line x1="20" y1="5" x2="20" y2="24" stroke="#24497e" stroke-width=".7"/><rect x="10.5" y="25.5" width="19" height="3.6" rx="1.6" fill="#e2b23c" stroke="#8a6410" stroke-width=".9"/><rect x="18.2" y="29" width="3.6" height="6.4" fill="#24497e"/><circle cx="20" cy="37" r="2.5" fill="#e2b23c" stroke="#8a6410" stroke-width=".9"/></symbol>
+    <symbol id="su-3" viewBox="0 0 40 40"><path d="M13.5 4.5c4-2.5 11-2.5 14 .8l-3.2 31c-1.1 2.2-5.4 2.2-6.4 0z" fill="#6f9a3e" stroke="#33521a" stroke-width="1.2"/><circle cx="14.8" cy="13" r="2.4" fill="#33521a"/><circle cx="25.4" cy="19.5" r="2.2" fill="#33521a"/><circle cx="17" cy="26.5" r="2" fill="#33521a"/><path d="M17 6c2-1 5-1 7 0" stroke="#a9c97a" stroke-width="1.2" fill="none"/></symbol>
+  </defs>
+</svg>
+
+<div id="app">
+  <header class="bar">
+    <div class="score us"><span class="lbl">Nosotros</span><b id="sc0"></b></div>
+    <div class="mid"><div class="brand">Cau</div><div class="info" id="info"></div></div>
+    <div class="score them"><span class="lbl">Ellos</span><b id="sc1"></b></div>
+  </header>
+  <nav class="tools">
+    <button class="btn" id="btnMenu" type="button">Menú</button>
+    <button class="btn" id="btnRules" type="button">Reglas</button>
+    <button class="btn" id="btnLog" type="button">Historial</button>
+  </nav>
+  <section class="board" aria-label="Mesa">
+    <div class="seat top" id="seat2"></div>
+    <div class="row">
+      <div class="seat side" id="seat3"></div>
+      <div class="felt"><div class="table" id="table"></div><div class="callout" id="callout"></div></div>
+      <div class="seat side" id="seat1"></div>
+    </div>
+  </section>
+  <div class="narr" id="narr" aria-live="polite"></div>
+  <div class="you">
+    <div class="hand" id="hand"></div>
+    <div id="bottom"></div>
+  </div>
+</div>
+<div class="overlay" id="overlay" hidden><div class="panel" id="panel" role="dialog" aria-modal="true"></div></div>
+
+<script>
+(() => {
+'use strict';
+/* ---------------- Motor del Cau ---------------- */
+const RV = [1,2,3,4,5,6,7,10,11,12];
+const RN = ['As','2','3','4','5','6','7','Sota','Caballo','Rey'];
+const RNA = ['el as','el 2','el 3','el 4','el 5','el 6','el 7','la sota','el caballo','el rey'];
+const RNP = ['ases','doses','treses','cuatros','cincos','seises','sietes','sotas','caballos','reyes'];
+const SUITN = ['oros','copas','espadas','bastos'];
+const NAMES = ['Tú','Toni','Maria','Vicent'];
+const TEAMN = ['Nosotros','Ellos'];
+const TARGET = 40;
+const team = p => p % 2;
+const ALL = []; for (let s = 0; s < 4; s++) for (let r = 0; r < 10; r++) ALL.push({ id: s*10 + r, r, s });
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const clone = o => JSON.parse(JSON.stringify(o));
+const cloneLite = o => { const { log, feed, ...rest } = o; const c = JSON.parse(JSON.stringify(rest)); c.log = []; c.feed = []; return c; };
+const cardName = c => `${RNA[c.r]} de ${SUITN[c.s]}`;
+const emptyBon = () => ({ bac:0, rebac:0, sv:0, limpia:0, nit:0, pixat:0 });
+const bonSum = b => b.bac + b.rebac + b.sv + b.limpia + b.nit + (b.pixat || 0);
+const scoreTxt = s => s < 20 ? [s, s === 1 ? 'mala' : 'malas'] : [s - 20, s - 20 === 1 ? 'buena' : 'buenas'];
+
+function say(S, txt, k) { S.log.push({ txt, k: k || '' }); if (S.log.length > 500) S.log.splice(0, S.log.length - 500); S.feed.push({ txt, k: k || '' }); }
+
+function addPts(S, t, k, n) {
+  S.bon[t][k] += n; S.score[t] += n;
+  if (!S.over && n > 0 && S.score[t] >= TARGET) {
+    S.over = true; S.winner = t; S.phase = 'gameEnd'; S.endMid = true;
+    say(S, `${TEAMN[t]} llegan a 40: ¡fin de la partida!`, 'pts');
+  }
+}
+
+function newGame() {
+  const S = { score:[0,0], dealer: Math.floor(Math.random()*4), handNo:0, log:[], feed:[], over:false, winner:null };
+  newHand(S);
+  return S;
+}
+
+function newHand(S) {
+  S.handNo++;
+  S.deck = shuffle(ALL.map(c => ({ ...c })));
+  S.table = []; S.slots = {}; S.hands = [[],[],[],[]]; S.chain = null; S.lastPlay = null;
+  S.cap = [0,0]; S.bon = [emptyBon(), emptyBon()]; S.public = []; S.lastCapturer = null;
+  S.round = 0; S.bet = null; S.summary = null; S.duels = []; S.duelNotes = []; S.endMid = false; S.bubbles = ['','','',''];
+  S.turn = (S.dealer + 1) % 4;
+  say(S, `Mano ${S.handNo}. Reparte ${NAMES[S.dealer]}.`, 'hand');
+  // Reparto real: una al centro, una a cada jugador, otra al centro… (4 al centro y 3 a cada uno)
+  S.dealSeq = [];
+  const order = [1,2,3,4].map(i => (S.dealer + i) % 4);
+  for (let k = 0; k < 4; k++) {
+    dealCenter(S);
+    if (k < 3) for (const p of order) { const c = S.deck.pop(); S.hands[p].push(c); S.dealSeq.push({ to: p, id: c.id }); }
+  }
+  S.public.push(...S.table.map(c => c.id));
+  S.round = 1;
+  postDeal(S);
+}
+// Una carta al centro. Si su número ya está en el tapete «s'ha pixat»: vuelve al mazo, se baraja y sale otra
+function dealCenter(S) {
+  for (let guard = 0; guard < 50; guard++) {
+    const c = S.deck.pop(); const slot = pickSlot(S);
+    if (S.table.some(t => t.r === c.r)) {
+      S.dealSeq.push({ to: 'T', card: c, slot, pixat: true });
+      S.deck.push(c); shuffle(S.deck);
+      say(S, `S'ha pixat: ${RNA[c.r]} ya estaba en el tapete y vuelve al mazo.`, 'pixat');
+      if (SETTINGS.socarrat) { const t = 1 - team(S.dealer); say(S, `Sóc socarrat: ${TEAMN[t]} se apuntan 1.`, 'pts'); addPts(S, t, 'pixat', 1); }
+      continue;
+    }
+    S.slots[c.id] = slot; S.table.push(c);
+    S.dealSeq.push({ to: 'T', card: c, slot });
+    return;
+  }
+}
+
+function combo(hand) {
+  const cnt = {}; hand.forEach(c => cnt[c.r] = (cnt[c.r] || 0) + 1);
+  let best = null;
+  for (const r in cnt) {
+    const n = cnt[r]; if (n < 2) continue;
+    const c = { t: n >= 3 ? 2 : 1, r: +r };
+    if (!best || c.t > best.t || (c.t === best.t && c.r > best.r)) best = c;
+  }
+  return best;
+}
+const comboTxt = c => c.t === 2 ? `rondín de ${RNP[c.r]}` : `pareja de ${RNP[c.r]}`;
+
+function deal(S) {
+  S.round++;
+  S.lastPlay = null;                // cada reparto empieza jugada nueva: no hay bac sobre la última carta
+  S.dealSeq = [];
+  for (let k = 0; k < 3; k++) for (let i = 0; i < 4; i++) { const p = (S.dealer + 1 + i) % 4, c = S.deck.pop(); S.hands[p].push(c); S.dealSeq.push({ to: p, id: c.id }); }
+  postDeal(S);
+}
+function postDeal(S) {
+  if (S.over) { S.phase = 'gameEnd'; return; }
+  S.hands.forEach(h => h.sort((a, b) => a.r - b.r || a.s - b.s));
+  S.dealStart = S.turn;
+  S.dealCombos = [0,1,2,3].map(p => combo(S.hands[p]));
+  S.sung = [null,null,null,null]; S.first = [false,false,false,false]; S.second = [false,false,false,false];
+  S.nitState = 'open'; S.nitContested = false;
+  S.phase = 'play';
+  if (S.round === 3) {
+    // Último reparto: se canta sin esperar el turno
+    for (const p of dealOrder(S)) if (p !== 0 && S.dealCombos[p]) sing(S, p);
+    if (S.dealCombos[0]) S.phase = 'singLast'; else resolveNit(S);
+  }
+}
+const dealOrder = S => [0,1,2,3].map(i => (S.dealStart + i) % 4);
+
+function sing(S, p) {
+  S.sung[p] = S.dealCombos[p];
+  S.bubbles[p] = 'De nit';
+  say(S, p === 0 ? 'Cantas «de nit».' : `${NAMES[p]} canta «de nit».`, 'sing');
+}
+function canFirst(S, p) {
+  return S.phase === 'play' && S.turn === p && S.round < 3 && S.nitState === 'open' && !S.first[p] && !S.sung[p] && !!S.dealCombos[p] && S.hands[p].length === 3;
+}
+function canSecond(S, p) {
+  return S.phase === 'play' && S.turn === p && S.nitState === 'resolved' && !S.nitContested && S.sung[p] && S.sung[p].t === 2 && !S.second[p] && S.hands[p].length === 2;
+}
+function singSecond(S, p) {
+  S.second[p] = true; S.bubbles[p] = 'De nit ×2';
+  say(S, p === 0 ? 'Vuelves a cantar «de nit»: tienes rondín.' : `${NAMES[p]} vuelve a cantar «de nit»: tenía rondín.`, 'sing');
+  addPts(S, team(p), 'nit', 1);
+}
+// Alguien canta en su turno: los que también tienen de nit (y aún no han jugado en este reparto) lo dicen en ese momento
+function startSing(S, p) {
+  sing(S, p);
+  const order = [1,2,3].map(i => (p + i) % 4);
+  const resp = order.filter(q => S.dealCombos[q] && !S.sung[q] && !S.first[q]);
+  for (const q of resp) if (q !== 0) sing(S, q);
+  if (resp.includes(0)) { S.phase = 'singResp'; S.singer = p; }
+  else resolveNit(S);
+}
+// Se resuelve el de nit: si solo canta una pareja se apunta 1 por cada canto; si cantan las dos, se habla
+function resolveNit(S) {
+  if (S.nitState !== 'open') return;
+  if (S.phase === 'singLast' || S.phase === 'singResp') S.phase = 'play';
+  if (!S.sung.some(Boolean)) return;
+  const has = [0,1].map(t => [0,1,2,3].some(p => team(p) === t && S.sung[p]));
+  if (has[0] && has[1]) {
+    const order = dealOrder(S);
+    const first = order.find(p => S.sung[p]);
+    S.bet = { base: 0, acc: 0, pending: null, turnTeam: team(first), passes: 0, order };
+    S.nitState = 'contest'; S.nitContested = true; S.phase = 'nit';
+    say(S, `Las dos parejas tienen de nit: se habla. Solo cuenta lo que se apueste.`, 'nit');
+    return;
+  }
+  S.nitState = 'resolved';
+  for (const p of dealOrder(S)) if (S.sung[p] && !S.over) addPts(S, team(p), 'nit', 1);
+  for (const t of [0,1]) if (has[t]) say(S, `${TEAMN[t]} se apuntan ${[0,1,2,3].filter(p => team(p) === t && S.sung[p]).length} de nit.`, 'pts');
+}
+
+function teamBest(S, t) {
+  let best = null, bestPos = 99;
+  S.bet.order.forEach((p, pos) => {
+    if (team(p) !== t) return; const c = S.sung[p]; if (!c) return;
+    if (!best || c.t > best.t || (c.t === best.t && c.r > best.r)) { best = c; bestPos = pos; }
+  });
+  return { c: best, pos: bestPos };
+}
+function betOptions(S) {
+  const b = S.bet;
+  if (!b.pending) return ['xic','envit','falta','pass'];
+  if (b.pending.falta) return ['vull','novull'];
+  if (b.pending.kind === 'xic') return ['xac','envit','falta','novull'];
+  return ['vull','novull','torne','falta'];
+}
+const BETL = { pass:'Passe (ellos ganan 1)', xic:'Xic (1)', envit:'Envide (2)', torne:'Torne a envidar (2 más)', falta:'La partida', xac:'Xac', vull:'Vull', novull:'No vull' };
+const BETSAY = { pass:'passen', xic:'diuen «xic»', envit:'envíden 2', torne:'tornen a envidar', falta:'es juguen la partida', xac:'diuen «xac»', vull:'volen', novull:'no volen' };
+function betAct(S, t, a) {
+  const b = S.bet;
+  say(S, `${TEAMN[t]} ${BETSAY[a]}.`, 'nit');
+  S.lastBet = { t, a };
+  if (a === 'pass') {   // pasar el primero es rendirse: la otra pareja gana 1
+    const w = 1 - t; say(S, `${TEAMN[w]} se apuntan 1 de nit.`, 'pts');
+    S.bet = null; S.nitState = 'resolved'; S.phase = 'play'; addPts(S, w, 'nit', 1); return;
+  }
+  // Lo que se juega no se suma: xic = 1, envide = 2, torne a envidar = 2 más sobre lo que había
+  if (a === 'xic') { b.pending = { by: t, total: 1, kind: 'xic' }; b.turnTeam = 1 - t; return; }
+  if (a === 'envit') { if (b.pending) b.acc = b.pending.total; b.pending = { by: t, total: 2, kind: 'envit' }; b.turnTeam = 1 - t; return; }
+  if (a === 'torne') { b.acc = b.pending.total; b.pending = { by: t, total: b.pending.total + 2, kind: 'torne' }; b.turnTeam = 1 - t; return; }
+  if (a === 'falta') { if (b.pending) b.acc = b.pending.total; b.pending = { by: t, falta: true }; b.turnTeam = 1 - t; return; }
+  if (a === 'vull' || a === 'xac') { if (b.pending.falta) return showdown(S, true); b.acc = b.pending.total; return showdown(S, false); }
+  if (a === 'novull') {
+    const w = b.pending.by, pts = Math.max(1, b.acc);
+    say(S, `${TEAMN[w]} se apuntan ${pts} de nit.`, 'pts');
+    S.bet = null; S.nitState = 'resolved'; S.phase = 'play'; addPts(S, w, 'nit', pts);
+  }
+}
+function showdown(S, falta) {
+  const A = teamBest(S, 0), B = teamBest(S, 1);
+  const w = (A.c.t !== B.c.t) ? (A.c.t > B.c.t ? 0 : 1) : (A.c.r !== B.c.r ? (A.c.r > B.c.r ? 0 : 1) : (A.pos < B.pos ? 0 : 1));
+  const pts = S.bet.acc;
+  S.bet = null; S.nitState = 'resolved'; S.phase = 'play';
+  // No se enseñan las cartas: quién gana se sabe al final de la mano
+  (S.duels = S.duels || []).push({ w, pts, falta, a: comboTxt(A.c), b: comboTxt(B.c), round: S.round });
+  say(S, `De nit aceptado: ${falta ? 'se juegan la partida' : `en juego ${pts}`}. Se verá al acabar el reparto.`, 'pts');
+}
+
+function takeEscala(S, r) {
+  const got = [];
+  for (let x = r + 1; x < 10; x++) { const j = S.table.findIndex(c => c.r === x); if (j < 0) break; got.push(S.table.splice(j, 1)[0]); }
+  return got;
+}
+function escLen(S, r) { let n = 0; for (let x = r + 1; x < 10; x++) { if (!S.table.some(c => c.r === x)) break; n++; } return n; }
+// Huecos del tapete: cada carta cae en uno libre, con un poco de desorden, y no se mueve hasta que la recogen
+const SLOTPOS = [[20,14],[50,14],[80,14],[20,38],[50,38],[80,38],[20,62],[50,62],[80,62],[20,86],[50,86],[80,86]];
+function pickSlot(S) {
+  const used = new Set(S.table.map(c => S.slots[c.id] && S.slots[c.id].i));
+  if (S.chain && S.chain.slot) used.add(S.chain.slot.i);
+  const free = SLOTPOS.map((_, i) => i).filter(i => !used.has(i));
+  const i = free.length ? free[Math.floor(Math.random() * free.length)] : Math.floor(Math.random() * SLOTPOS.length);
+  const j = () => Math.random() * 2 - 1;
+  return { i, dx: +(j() * 2.5).toFixed(1), dy: +(j() * 2.5).toFixed(1), rot: +(j() * 8).toFixed(1) };
+}
+function resolveChain(S, ev, noLimpia) {
+  const ch = S.chain; S.chain = null;
+  const got = ch.cards.concat(takeEscala(S, ch.r)); const t = team(ch.owner);
+  S.cap[t] += got.length; S.lastCapturer = ch.owner;
+  ev.push({ k:'cobra', p: ch.owner, txt: ch.owner === 0 ? `Te llevas ${got.length} cartas` : `${NAMES[ch.owner]} se lleva ${got.length} cartas` });
+  if (!ch.limpia && !noLimpia && S.table.length === 0) { ev.push({ k:'limpia', p: ch.owner, txt:'¡Limpia!', pts:1 }); addPts(S, t, 'limpia', 1); }
+  return got.map(c => c.id);
+}
+
+// Aplica una jugada. Devuelve los eventos y las cartas que salen de la mesa.
+function applyPlay(S, p, cid) {
+  const ev = []; const h = S.hands[p];
+  if (h.length === 3) S.first[p] = true;
+  const card = h.splice(h.findIndex(c => c.id === cid), 1)[0];
+  S.public.push(card.id);
+  // la última jugada de la mano (última carta del tercer reparto) nunca hace limpia
+  const lastOfHand = S.deck.length === 0 && S.hands.every(x => x.length === 0);
+  const t = team(p); let take = [];
+  if (S.chain) {
+    if (card.r === S.chain.r) {
+      const prevTeam = team(S.chain.owner);
+      S.chain.cards.push(card); S.chain.owner = p;
+      const n = S.chain.cards.length;
+      S.lastPlay = { p, id: card.id, r: card.r, cap: true };
+      const L = S.chain.limpia;   // la limpia del bac pasa a quien lo mata
+      if (n === 3) { ev.push({ k:'rebac', p, txt: L ? '¡Rebac + Limpia!' : '¡Rebac!', pts: L ? 4 : 3 }); addPts(S, prevTeam, 'bac', -2); addPts(S, t, 'rebac', 3); }
+      else { ev.push({ k:'sv', p, txt: L ? '¡Sant Vicent + Limpia!' : '¡Sant Vicent!', pts: L ? 5 : 4 }); addPts(S, prevTeam, 'rebac', -3); addPts(S, t, 'sv', 4); }
+      if (L) { addPts(S, prevTeam, 'limpia', -1); if (lastOfHand) { S.chain.limpia = false; ev[ev.length - 1].txt = ev[ev.length - 1].txt.replace(' + Limpia', ''); ev[ev.length - 1].pts -= 1; } else addPts(S, t, 'limpia', 1); }
+      if (n === 4) take = resolveChain(S, ev, lastOfHand);
+      return { ev, take, card };
+    }
+    take = resolveChain(S, ev, lastOfHand);
+  }
+  const lp = S.lastPlay;
+  if (lp && !lp.cap && lp.p === (p + 3) % 4 && lp.r === card.r) {
+    const i = S.table.findIndex(c => c.id === lp.id);
+    if (i >= 0) {
+      const prev = S.table.splice(i, 1)[0];
+      const L = !lastOfHand && S.table.length - escLen(S, card.r) === 0;   // el bac deja la mesa vacía: también es limpia
+      S.chain = { r: card.r, cards: [prev, card], owner: p, slot: S.slots[prev.id], limpia: L };
+      S.lastPlay = { p, id: card.id, r: card.r, cap: true };
+      ev.push({ k:'bac', p, txt: L ? '¡Bac + Limpia!' : '¡Bac!', pts: L ? 3 : 2 }); addPts(S, t, 'bac', 2);
+      if (L) addPts(S, t, 'limpia', 1);
+      return { ev, take, card };
+    }
+  }
+  const i = S.table.findIndex(c => c.r === card.r);
+  if (i >= 0) {
+    const got = [card, S.table.splice(i, 1)[0]];
+    got.push(...takeEscala(S, card.r));
+    S.cap[t] += got.length; S.lastCapturer = p;
+    take = take.concat(got.map(c => c.id));
+    S.lastPlay = { p, id: card.id, r: card.r, cap: true };
+    ev.push({ k:'cap', p, txt:`Captura ${got.length}`, n: got.length });
+    if (S.table.length === 0 && !lastOfHand) { ev.push({ k:'limpia', p, txt:'¡Limpia!', pts:1 }); addPts(S, t, 'limpia', 1); }
+  } else {
+    S.slots[card.id] = pickSlot(S); S.table.push(card);
+    S.lastPlay = { p, id: card.id, r: card.r, cap: false };
+    ev.push({ k:'deja', p, txt:'Se queda en la mesa' });
+  }
+  return { ev, take, card };
+}
+
+function afterPlay(S) {
+  if (S.over) return;
+  S.turn = (S.turn + 1) % 4;
+  if (S.hands.every(h => h.length === 0)) {
+    if (S.chain) { const ev = []; resolveChain(S, ev, S.deck.length === 0); ev.forEach(e => say(S, e.txt, e.k)); if (S.over) return; }
+    S.lastPlay = null;
+    resolveDuels(S); if (S.over) return;
+    if (S.deck.length) { say(S, `Reparto ${S.round + 1} de 3.`, 'hand'); deal(S); }
+    else endHand(S);
+  }
+}
+
+// El de nit hablado se descubre al acabar el reparto en que se cantó
+function resolveDuels(S) {
+  S.duelNotes = S.duelNotes || [];
+  for (const d of (S.duels || [])) {
+    const txt = `De nit del reparto ${d.round}: Nosotros ${d.a}, Ellos ${d.b}. Ganan ${TEAMN[d.w]}${d.falta ? ' la partida' : ` (+${d.pts})`}.`;
+    S.duelNotes.push(txt); say(S, txt, 'duel');
+    if (d.falta) { if (!S.over) { S.over = true; S.winner = d.w; S.endFalta = true; S.endMid = true; S.phase = 'gameEnd'; } }
+    else addPts(S, d.w, 'nit', d.pts);
+  }
+  S.duels = [];
+}
+function endHand(S) {
+  if (S.table.length) {
+    const w = S.lastCapturer ?? ((S.turn + 3) % 4);
+    S.cap[team(w)] += S.table.length;
+    say(S, `${NAMES[w]} se lleva lo que queda en la mesa (${S.table.length}).`);
+    S.table = [];
+  }
+  resolveDuels(S);
+  const rows = [0,1].map(t => {
+    const cards = S.cap[t], cardPts = Math.max(0, cards - 20), b = S.bon[t];
+    return { cards, cardPts, ...b, total: cardPts + bonSum(b) };
+  });
+  S.score[0] += rows[0].cardPts; S.score[1] += rows[1].cardPts;
+  S.summary = rows;
+  say(S, `Fin de la mano: Nosotros ${rows[0].cards} cartas, Ellos ${rows[1].cards}. Marcador ${S.score[0]}–${S.score[1]}.`, 'pts');
+  if (!S.over && (S.score[0] >= TARGET || S.score[1] >= TARGET) && S.score[0] !== S.score[1]) {
+    S.over = true; S.winner = S.score[0] > S.score[1] ? 0 : 1;
+  }
+  S.phase = 'handEnd';
+}
+
+/* ---------------- Bots ---------------- */
+function unknownFor(S, p) {
+  const known = new Set(S.public); S.hands[p].forEach(c => known.add(c.id));
+  return ALL.filter(c => !known.has(c.id));
+}
+function probHas(U, k, h) {
+  if (k <= 0 || h <= 0) return 0; if (U - k < h) return 1;
+  let q = 1; for (let i = 0; i < h; i++) q *= (U - k - i) / (U - i);
+  return 1 - q;
+}
+function value(S, t) { return (S.cap[t] - S.cap[1 - t]) + (bonSum(S.bon[t]) - bonSum(S.bon[1 - t])); }
+function evalPlay(S, p, cid) {
+  const sim = cloneLite(S); const t = team(p);
+  const before = value(S, t); applyPlay(sim, p, cid);
+  const gain = value(sim, t) - before;
+  const q = (p + 1) % 4;
+  const h = sim.hands[q].length;
+  if (!h) return gain;                       // fin de reparto: no hay bac sobre la última carta
+  const unk = unknownFor(sim, p); const U = unk.length;
+  const P = r => probHas(U, unk.filter(c => c.r === r).length, h);
+  let risk = 0;
+  if (sim.chain && team(sim.chain.owner) === t) {
+    const r = sim.chain.r; const v = sim.chain.cards.length + escLen(sim, r);
+    risk += P(r) * (2 * v + 5);
+  }
+  const lp = sim.lastPlay;
+  for (const c of sim.table) {
+    let v = 2 + escLen(sim, c.r);
+    if (lp && !lp.cap && lp.id === c.id) v += 2;
+    if (sim.table.length === 1) v += 1;
+    risk += P(c.r) * v * 0.9;
+  }
+  return gain - risk;
+}
+/* Niveles: fácil (solo mira lo que gana ya, y a veces se equivoca),
+   normal (lo que gana menos el riesgo de que el siguiente le haga bac o capture),
+   difícil (imagina repartos posibles de las cartas ocultas y simula la vuelta entera) */
+let SETTINGS = { partner: 'dificil', rivals: 'normal', hints: false, labels: false, socarrat: false, speed: 1, deck: 'moderna' };
+try { Object.assign(SETTINGS, JSON.parse(localStorage.getItem('cau.settings') || '{}')); } catch (e) {}
+const levelOf = p => p === 2 ? SETTINGS.partner : SETTINGS.rivals;
+function botChooseBest(S, p) {
+  let best = null, bv = -1e9;
+  for (const c of S.hands[p]) { const v = evalPlay(S, p, c.id) + Math.random() * 0.05; if (v > bv) { bv = v; best = c.id; } }
+  return best;
+}
+// Normal: la mejor jugada según el cálculo, pero de vez en cuando (15 %) se despista y juega la segunda mejor
+function botChooseNormal(S, p) {
+  const h = S.hands[p];
+  if (h.length < 2 || Math.random() >= 0.15) return botChooseBest(S, p);
+  const sc = h.map(c => [evalPlay(S, p, c.id), c.id]).sort((x, y) => y[0] - x[0]);
+  return sc[1][1];
+}
+function botChooseEasy(S, p) {
+  const h = S.hands[p];
+  if (Math.random() < 0.3) return h[Math.floor(Math.random() * h.length)].id;
+  const t = team(p); let best = null, bv = -1e9;
+  for (const c of h) { const sim = cloneLite(S); const v0 = value(sim, t); applyPlay(sim, p, c.id); const v = value(sim, t) - v0 + Math.random() * 0.8; if (v > bv) { bv = v; best = c.id; } }
+  return best;
+}
+function determinize(S, p) {
+  const d = cloneLite(S); const unk = shuffle(unknownFor(S, p).map(c => ({ ...c })));
+  let i = 0;
+  for (let q = 0; q < 4; q++) { if (q === p) continue; const n = d.hands[q].length; d.hands[q] = unk.slice(i, i + n); i += n; }
+  d.deck = unk.slice(i);
+  return d;
+}
+function botChooseHard(S, p) {
+  const cands = S.hands[p]; if (cands.length === 1) return cands[0].id;
+  const t = team(p), N = 40, tot = {};
+  cands.forEach(c => tot[c.id] = 0);
+  for (let k = 0; k < N; k++) {
+    const det = determinize(S, p);
+    for (const c of cands) {
+      const sim = cloneLite(det); const v0 = value(sim, t);
+      applyPlay(sim, p, c.id); afterPlay(sim);
+      for (let steps = 0; steps < 3; steps++) {
+        if (sim.over || sim.phase !== 'play' || sim.round !== det.round || sim.turn === p || !sim.hands[sim.turn].length) break;
+        const q = sim.turn; applyPlay(sim, q, botChooseBest(sim, q)); afterPlay(sim);
+      }
+      let leaf = value(sim, t) - v0;
+      // si me vuelve a tocar en el mismo reparto, sumo lo que valdría mi mejor jugada siguiente
+      if (!sim.over && sim.phase === 'play' && sim.round === det.round && sim.turn === p && sim.hands[p].length) {
+        let bv = -1e9; for (const h of sim.hands[p]) bv = Math.max(bv, evalPlay(sim, p, h.id)); leaf += bv;
+      } else if (!sim.over && sim.phase === 'play' && sim.round === det.round) {
+        // la vuelta se ha cortado: riesgo de lo que queda en la mesa para el que juega ahora
+        const q = sim.turn; if (team(q) !== t && sim.hands[q].length) { let bv = -1e9; for (const h of sim.hands[q]) bv = Math.max(bv, evalPlay(sim, q, h.id)); leaf -= Math.max(0, bv); }
+      }
+      tot[c.id] += leaf;
+    }
+  }
+  let best = null, bv = -1e9;
+  for (const c of cands) { const v = tot[c.id] / N + Math.random() * 0.01; if (v > bv) { bv = v; best = c.id; } }
+  return best;
+}
+function botChoose(S, p) {
+  const l = levelOf(p);
+  if (l === 'facil') return botChooseEasy(S, p);
+  if (l === 'dificil') return botChooseHard(S, p);
+  return botChooseNormal(S, p);
+}
+// El bot canta si puede. Devuelve true si ha cantado.
+function botSing(S, p) {
+  if (canFirst(S, p)) { startSing(S, p); return true; }
+  if (canSecond(S, p)) { singSecond(S, p); return true; }
+  return false;
+}
+// Probabilidad de ganar el de nit vista desde el bot que habla: reparte al azar las cartas que no ve
+function nitWinProb(S, sp) {
+  const t = team(sp), own = S.sung[sp], order = S.bet.order;
+  const unk = unknownFor(S, sp); let wins = 0, n = 0;
+  const others = [0,1,2,3].filter(q => q !== sp && S.sung[q]);
+  for (let k = 0; k < 400 && n < 150; k++) {
+    const pool = shuffle(unk.slice()); let i = 0, ok = true; const cb = {}; cb[sp] = own;
+    for (const q of others) {
+      let found = null;
+      for (let tries = 0; tries < 30 && !found; tries++) {
+        if (i + 3 > pool.length) { shuffle(pool); i = 0; }
+        const c = combo(pool.slice(i, i + 3)); i += 3; if (c) found = c;
+      }
+      if (!found) { ok = false; break; } cb[q] = found;
+    }
+    if (!ok) continue;
+    const best = tt => { let b = null, pos = 99; order.forEach((q, ps) => { if (team(q) !== tt || !cb[q]) return; const c = cb[q]; if (!b || c.t > b.t || (c.t === b.t && c.r > b.r)) { b = c; pos = ps; } }); return { b, pos }; };
+    const A = best(t), B = best(1 - t);
+    const win = A.b.t !== B.b.t ? A.b.t > B.b.t : A.b.r !== B.b.r ? A.b.r > B.b.r : A.pos < B.pos;
+    wins += win ? 1 : 0; n++;
+  }
+  return n ? wins / n : 0.5;
+}
+function botBet(S) {
+  const b = S.bet, t = b.turnTeam;
+  const speakers = [t, t + 2].filter(p => S.sung[p] && p !== 0);
+  const sp = speakers.reduce((a, p) => (!a || S.sung[p].t > S.sung[a].t || (S.sung[p].t === S.sung[a].t && S.sung[p].r > S.sung[a].r)) ? p : a, null);
+  const lvl = levelOf(sp), R = Math.random();
+  const behind = S.score[1 - t] - S.score[t];
+  // P = probabilidad estimada de tener la jugada más alta
+  let P;
+  if (lvl === 'dificil') P = nitWinProb(S, sp);
+  else { const c = S.sung[sp]; const st = c ? c.t * 10 + c.r : 10; P = Math.min(0.95, Math.max(0.1, (st - 8) / 16)); if (lvl === 'facil') P = Math.min(0.95, Math.max(0.05, P + (R - 0.5) * 0.6)); }
+  let a;
+  if (!b.pending) {
+    // el primero que habla dice como mínimo xic
+    if (lvl === 'facil' && R < 0.08) a = 'pass';
+    else if (P > 0.88 && (lvl === 'dificil' ? R < 0.4 : R < 0.2) && b.acc === 0) a = 'falta';
+    else if (P > 0.62) a = 'envit';
+    else a = 'xic';
+  } else if (b.pending.falta) {
+    a = (P > 0.72 || (behind > 15 && P > 0.45)) ? 'vull' : 'novull';
+  } else if (b.pending.kind === 'xic') {
+    // a un xic se contesta xac: pasar daría el punto igualmente
+    a = P > 0.75 ? 'envit' : 'xac';
+  } else {
+    a = (P > 0.8 && b.acc < 6) ? 'torne' : P > (lvl === 'dificil' ? 0.45 : 0.5) ? 'vull' : 'novull';
+  }
+  betAct(S, t, a);
+}
+
+/* ---------------- Cartas españolas ---------------- */
+const SUITCOL = ['#9c700c','#a8222a','#24497e','#33641f'];
+const ROBE = ['#e6c158','#d4584e','#5d86c4','#6f9a4a'];
+const LAYOUT = {
+  1: [[30,45]], 2: [[30,25],[30,65]], 3: [[30,21],[30,45],[30,69]],
+  4: [[19,27],[41,27],[19,63],[41,63]], 5: [[19,25],[41,25],[30,45],[19,65],[41,65]],
+  6: [[19,23],[41,23],[19,45],[41,45],[19,67],[41,67]], 7: [[19,22],[41,22],[30,33],[19,46],[41,46],[19,68],[41,68]]
+};
+const PSZ = { 1: 30, 2: 18, 3: 16, 4: 15, 5: 14, 6: 13, 7: 12.5 };
+const SKIN = '#f0c9a0', LINE = '#3a2416';
+const pip = (s, x, y, z) => `<use href="#su-${s}" x="${x - z/2}" y="${y - z/2}" width="${z}" height="${z}"/>`;
+const FIG = {
+  7: (s) => `<path d="M23 30 H37 L41 62 H19Z" fill="${ROBE[s]}" stroke="${LINE}" stroke-width=".7"/><path d="M23 30 L30 40 L37 30" fill="none" stroke="${LINE}" stroke-width=".6"/><rect x="20.5" y="47" width="19" height="2.4" fill="${LINE}"/><rect x="24.5" y="62" width="4" height="13" fill="${LINE}"/><rect x="31.5" y="62" width="4" height="13" fill="${LINE}"/><circle cx="30" cy="23" r="5.5" fill="${SKIN}" stroke="#7a4a2a" stroke-width=".6"/><path d="M24 22 Q24 14.5 30 14.5 Q36 14.5 36 22 L35 19.5 Q30 16 25 19.5Z" fill="#6b3b1f"/><path d="M22 16.5 Q30 10 38 16.5 L36 18 Q30 14 24 18Z" fill="${ROBE[s]}" stroke="${LINE}" stroke-width=".5"/>${pip(s, 43, 41, 13)}`,
+  8: (s) => `<path d="M17 63 Q11 66 13 76" fill="none" stroke="#5a3a20" stroke-width="2"/><path d="M15 57 Q15 49 25 49 H39 Q46 49 46 57 Q46 63 39 63 H22 Q15 63 15 57Z" fill="#b98a5c" stroke="#5a3a20" stroke-width=".7"/><path d="M39 51 L46 38 Q49 34.5 52 38.5 L50.5 43 L45 53Z" fill="#b98a5c" stroke="#5a3a20" stroke-width=".7"/><circle cx="48.8" cy="38.8" r=".9" fill="#2a1a12"/><g stroke="#5a3a20" stroke-width="2.2" stroke-linecap="round"><line x1="20" y1="62" x2="18" y2="77"/><line x1="25" y1="63" x2="25" y2="77"/><line x1="37" y1="63" x2="37" y2="77"/><line x1="42" y1="62" x2="45" y2="77"/></g><path d="M25 50 L27 35 H35 L36 50Z" fill="${ROBE[s]}" stroke="${LINE}" stroke-width=".7"/><circle cx="31" cy="30" r="4.6" fill="${SKIN}" stroke="#7a4a2a" stroke-width=".6"/><path d="M26.5 28 Q31 22 35.5 28" fill="${ROBE[s]}" stroke="${LINE}" stroke-width=".5"/>${pip(s, 16, 33, 13)}`,
+  9: (s) => `<path d="M22 31 H38 L43 75 H17Z" fill="${ROBE[s]}" stroke="${LINE}" stroke-width=".7"/><rect x="17" y="69" width="26" height="6" fill="#fbf6ec" stroke="${LINE}" stroke-width=".5"/><g fill="${LINE}"><circle cx="21" cy="72" r=".7"/><circle cx="26" cy="72" r=".7"/><circle cx="31" cy="72" r=".7"/><circle cx="36" cy="72" r=".7"/><circle cx="40" cy="72" r=".7"/></g><line x1="30" y1="34" x2="30" y2="69" stroke="${LINE}" stroke-width=".6"/><circle cx="30" cy="24" r="5.6" fill="${SKIN}" stroke="#7a4a2a" stroke-width=".6"/><path d="M24.6 25.5 Q30 35 35.4 25.5 Q30 28.5 24.6 25.5Z" fill="#9a8f84"/><path d="M23.6 19 L25 11 L27.8 15.2 L30 10 L32.2 15.2 L35 11 L36.4 19Z" fill="#e3b24f" stroke="#7a5a10" stroke-width=".6"/>${pip(s, 43, 44, 13)}`
+};
+const svgCache = {};
+function cardSVG(c) {
+  if (svgCache[c.id]) return svgCache[c.id];
+  const col = SUITCOL[c.s];
+  let body = '';
+  if (c.r < 7) { const n = c.r + 1; body = LAYOUT[n].map(([x, y]) => pip(c.s, x, y, PSZ[n])).join(''); }
+  else body = FIG[c.r](c.s);
+  // la «pinta»: cortes en el marco (oros 0, copas 1, espadas 2, bastos 3)
+  let gaps = '';
+  for (let i = 0; i < c.s; i++) { const x = 30 + (i - (c.s - 1) / 2) * 7 - 2; gaps += `<rect x="${x}" y="2" width="4" height="3" fill="#f7f0e2"/><rect x="${x}" y="85" width="4" height="3" fill="#f7f0e2"/>`; }
+  const idx = `<text x="9.5" y="15" font-size="11" font-weight="800" fill="${col}" font-family="Alegreya SC, Georgia, serif" text-anchor="middle">${RV[c.r]}</text>`;
+  const idx2 = `<text x="9.5" y="15" font-size="11" font-weight="800" fill="${col}" font-family="Alegreya SC, Georgia, serif" text-anchor="middle" transform="rotate(180 30 45)">${RV[c.r]}</text>`;
+  return svgCache[c.id] = `<svg viewBox="0 0 60 90" aria-hidden="true"><rect x=".5" y=".5" width="59" height="89" rx="6" fill="#f7f0e2" stroke="#d6c4a4"/><rect x="3.5" y="3.5" width="53" height="83" rx="3" fill="none" stroke="${col}" stroke-width=".9"/>${gaps}${body}${idx}${idx2}</svg>`;
+}
+
+/* ---------------- Interfaz ---------------- */
+const $ = id => document.getElementById(id);
+let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
+const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
+let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
+function saveSettings() { SETTINGS.speed = speedIx; try { localStorage.setItem('cau.settings', JSON.stringify(SETTINGS)); } catch (e) {} }
+const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const sleep = ms => new Promise(r => setTimeout(r, ms * SPEEDS[speedIx][1]));
+
+function save() { try { localStorage.setItem('cau.v2', JSON.stringify(S)); } catch (e) {} }
+function load() { try { const s = JSON.parse(localStorage.getItem('cau.v2') || 'null'); return s && s.hands ? s : null; } catch (e) { return null; } }
+
+function cardHTML(c, cls = '') {
+  const lbl = `${RN[c.r]} de ${SUITN[c.s]}`;
+  if (SETTINGS.deck === 'clasica') return `<div class="card cl ${cls}" role="img" aria-label="${lbl}" style="background-position:${(c.r / 9 * 100).toFixed(3)}% ${(c.s / 4 * 100).toFixed(3)}%"></div>`;
+  return `<div class="card ${cls}" role="img" aria-label="${lbl}">${cardSVG(c)}</div>`;
+}
+
+function renderSeat(p) {
+  const el = $('seat' + p); if (!el) return;
+  const n = dealView ? dealView.n[p] : S.hands[p].length - (fx && fx.p === p ? 1 : 0);
+  const backs = Array.from({ length: n }, () => '<span class="back"></span>').join('');
+  el.className = 'seat ' + (p === 2 ? 'top' : 'side') + ((S.phase === 'play' || S.phase === 'nit') && S.turn === p ? ' turn' : '');
+  const dealer = S.dealer === p ? '<span class="dealer">Reparte</span>' : '';
+  const role = p === 2 ? 'Compañera' : 'Rival';
+  el.innerHTML = `<div class="av ${team(p) === 0 ? 'us' : ''}">${NAMES[p][0]}</div><div class="who"><span class="nm">${NAMES[p]}</span><span class="sub">${role}</span>${dealer}</div><div class="backs" aria-label="${n} cartas">${backs}</div><div class="bubble">${(SETTINGS.labels || /^De nit/.test(S.bubbles[p] || '')) ? (S.bubbles[p] || '') : ''}</div>`;
+}
+
+let dealView = null;   // durante la animación de reparto: cuántas cartas se ven ya
+function slotHTML(sl, inner) {
+  const [x, y] = SLOTPOS[sl.i];
+  return `<div class="slot" style="left:${x + sl.dx}%;top:${y + sl.dy}%;--rot:${sl.rot}deg">${inner}</div>`;
+}
+const stacked = cards => cards.map((h, k) => k === 0 ? h : `<div class="stk" style="left:${k * 26}%;top:${k * 20}%">${h}</div>`).join('');
+function renderTable() {
+  // el tamaño de las cartas se ajusta al tapete para que quepan 3 columnas y 4 filas sin pisarse
+  const tw = $('table').clientWidth, th = $('table').clientHeight;
+  if (tw && th) $('table').style.setProperty('--cw', Math.max(40, Math.min(66, Math.floor(tw / 3.9), Math.floor(th / 4 / 1.5 * 0.9))) + 'px');
+  if (dealView && !dealView.table) {
+    let h = S.table.filter(c => dealView.tableIds.has(c.id)).map(c => slotHTML(S.slots[c.id], cardHTML(c))).join('');
+    if (dealView.temp) h += slotHTML(dealView.temp.slot, cardHTML(dealView.temp.card, 'taking'));
+    $('table').innerHTML = h; return;
+  }
+  const take = fx ? new Set(fx.take) : new Set(), glow = fx && fx.glow ? new Set(fx.glow) : new Set();
+  const cls = c => take.has(c.id) || glow.has(c.id) ? 'taking' : '';
+  const lastId = S.lastPlay && !S.lastPlay.cap ? S.lastPlay.id : null;
+  // la carta que se juega se coloca encima de la que va a recoger (o en la pila del bac)
+  const inChain = fx && S.chain && fx.card.r === S.chain.r;
+  const match = fx && !inChain ? S.table.find(c => c.r === fx.card.r) : null;
+  const inc = fx ? cardHTML(fx.card, 'incoming ' + cls(fx.card)) : '';
+  let html = S.table.map(c => {
+    const h = cardHTML(c, cls(c) || (c.id === lastId && !fx ? 'last' : ''));
+    return slotHTML(S.slots[c.id], match && match.id === c.id ? stacked([h, inc]) : h);
+  }).join('');
+  if (S.chain) html += slotHTML(S.chain.slot, stacked(S.chain.cards.map(c => cardHTML(c, cls(c))).concat(inChain ? [inc] : [])));
+  if (fx && !inChain && !match) html += slotHTML(fx.slot || { i: 4, dx: 0, dy: 0, rot: 0 }, inc);
+  $('table').innerHTML = html || '<span class="empty">Mesa vacía</span>';
+}
+
+function hintFor(cid) {
+  const sim = cloneLite(S); const res = applyPlay(sim, 0, cid);
+  const k = res.ev.map(e => e.k);
+  const sp = res.ev.find(e => ['sv','rebac','bac'].includes(e.k));
+  if (sp) return [`${sp.txt.replace(/[¡!]/g, '')} +${sp.pts}`, 'big'];
+  const cap = res.ev.find(e => e.k === 'cap');
+  if (cap) return [`Captura ${cap.n}${k.includes('limpia') && !k.includes('cobra') ? ' · Limpia' : ''}`, k.includes('limpia') ? 'big' : 'cap'];
+  return ['Se queda', ''];
+}
+
+function humanSpeaks(S) { return S.phase === 'nit' && S.bet && S.bet.turnTeam === 0 && !!S.sung[0]; }
+function speakerName(S) { const t = S.bet.turnTeam; const ps = [t, t + 2].filter(p => S.sung[p]); return ps.map(p => NAMES[p]).join(' y '); }
+function myTurn() { return S.phase === 'play' && S.turn === 0 && !busy && !fx && !S.over; }
+
+function renderHand() {
+  const mine = myTurn();
+  $('hand').innerHTML = S.hands[0].filter(c => !(fx && fx.card.id === c.id)).slice(0, dealView ? dealView.n[0] : 3).map(c => {
+    const [h, cls] = mine && SETTINGS.hints ? hintFor(c.id) : ['', ''];
+    return `<button class="hc" type="button" data-id="${c.id}" ${mine ? '' : 'disabled'}>${cardHTML(c)}<span class="hint ${cls}" ${h ? '' : 'style="visibility:hidden"'}>${h || '·'}</span></button>`;
+  }).join('');
+}
+
+function renderBottom() {
+  const el = $('bottom');
+  if ((S.phase === 'singLast' || S.phase === 'singResp') && !busy) {
+    const head = S.phase === 'singLast' ? 'Último reparto' : `${NAMES[S.singer]} ha cantado de nit`;
+    const why = S.phase === 'singLast' ? 'En el último reparto se canta al principio.' : 'Si tú también tienes, lo dices ahora.';
+    el.innerHTML = `<div class="nit"><h3>${head}</h3><p>Tienes ${comboTxt(S.dealCombos[0])}. ${why}</p><div class="acts"><button class="btn sing" type="button" data-sing="resp">Cantar de nit</button><button class="btn" type="button" data-sing="skip">No cantar</button></div></div>`;
+    return;
+  }
+  if (humanSpeaks(S) && !busy) {
+    const b = S.bet; const my = S.sung[0];
+    const opts = betOptions(S);
+    let line = b.acc ? `Ya hay <b>${b.acc}</b> en juego.` : `Solo se cobra lo que se apueste.`;
+    if (b.pending) line = b.pending.falta ? `Ellos se juegan <b>la partida</b>.` : b.pending.kind === 'xic' ? `Ellos dicen <b>xic</b> (1 punto).` : `Ellos ${b.pending.kind === 'torne' ? 'vuelven a envidar' : 'envidan'}: se juegan <b>${b.pending.total}</b>.`;
+    const mineTxt = `Tienes ${comboTxt(my)}${S.sung[2] ? ' y Maria también ha cantado' : ''}.`;
+    el.innerHTML = `<div class="nit"><h3>Se habla el de nit</h3><p>${mineTxt} ${line}</p><div class="acts">${opts.map(o => `<button class="btn ${['vull','xac','envit','xic'].includes(o) ? 'primary' : ''} ${o === 'falta' ? 'warn' : ''}" type="button" data-bet="${o}">${o === 'novull' && b.pending && b.pending.kind === 'xic' ? 'Passe (ellos ganan 1)' : BETL[o]}</button>`).join('')}</div></div>`;
+    return;
+  }
+  let txt = '', btn = '';
+  if (dealView) txt = `Reparte <b>${NAMES[S.dealer]}</b>…`;
+  else if (S.phase === 'play' && !fx) {
+    if (S.turn === 0 && !busy) {
+      txt = '<b>Te toca.</b> Elige una carta.';
+      if (canFirst(S, 0)) btn = `<button class="btn sing" type="button" data-sing="first">Cantar de nit</button>`;
+      else if (canSecond(S, 0)) btn = `<button class="btn sing" type="button" data-sing="second">Cantar de nit otra vez</button>`;
+    } else txt = `Juega <b>${NAMES[S.turn]}</b>…`;
+  } else if (S.phase === 'nit' && S.bet) txt = `Habla el de nit <b>${speakerName(S)}</b>…`;
+  el.innerHTML = `<div class="status ${S.turn === 0 && S.phase === 'play' ? 'mine' : ''}"><span>${txt}</span>${btn}</div>`;
+}
+
+function renderScore(i) {
+  const [n, w] = scoreTxt(S.score[i]);
+  $('sc' + i).innerHTML = `${n}<small>${w}</small>`;
+}
+
+function render() {
+  document.body.classList.toggle('deck-clasica', SETTINGS.deck === 'clasica');
+  renderScore(0); renderScore(1);
+  $('info').textContent = `Mano ${S.handNo} · Reparto ${Math.max(1, S.round)}/3 · Mazo ${S.deck.length}`;
+  [1,2,3].forEach(renderSeat);
+  renderTable(); renderHand(); renderBottom();
+  $('narr').innerHTML = narr;
+  if ((S.phase === 'handEnd' || S.phase === 'gameEnd') && $('overlay').hidden) showSummary();
+}
+
+let calloutTimer = null;
+async function callout(txt, sub, wait = true) {
+  const el = $('callout'); const d = 1700 * SPEEDS[speedIx][1];
+  el.innerHTML = `<div class="call" style="--cd:${d}ms"><b>${txt}</b>${sub ? `<span>${sub}</span>` : ''}</div>`;
+  clearTimeout(calloutTimer); calloutTimer = setTimeout(() => { el.innerHTML = ''; }, d);
+  if (wait) await sleep(1500);
+}
+
+async function drainFeed(untilDeal) {
+  // con untilDeal se muestra solo lo ocurrido antes del nuevo reparto (p. ej. el de nit que se descubre)
+  let n = S.feed.length;
+  if (untilDeal) { const k = S.feed.findIndex(i => i.k === 'hand'); if (k >= 0) n = k + 1; }
+  const items = S.feed.splice(0, n);
+  for (const i of items) {
+    if (i.k === 'sing') { narr = i.txt; render(); await callout('De nit', /^(Cantas|Vuelves)/.test(i.txt) ? 'Tú' : i.txt.split(' ')[0]); }
+    else if (i.k === 'nit' || i.k === 'pts') { narr = i.txt; render(); await sleep(1100); }
+    else if (i.k === 'duel') { narr = i.txt; render(); await callout('De nit', i.txt.split('. ').slice(-1)[0].replace('.', '')); await sleep(1200); }
+  }
+}
+
+async function doPlay(p, cid) {
+  const sim = clone(S); sim.feed = [];
+  const res = applyPlay(sim, p, cid);
+  const special = res.ev.find(e => ['bac','rebac','sv','limpia'].includes(e.k));
+  // 1) la carta cae en la mesa
+  const slot = sim.slots[res.card.id] && sim.table.some(c => c.id === res.card.id) ? sim.slots[res.card.id] : null;
+  fx = { card: res.card, take: [], p, slot };
+  S.bubbles[p] = '';
+  narr = `<b>${NAMES[p]}</b> ${p === 0 ? 'juegas' : 'juega'} ${cardName(res.card)}.`;
+  render();
+  await sleep(900);
+  // 2) se marcan las cartas que se lleva
+  const cap = res.ev.find(e => e.k === 'cap'), cobra = res.ev.find(e => e.k === 'cobra');
+  let what = special ? special.txt.replace(/[¡!]/g, '') : cap ? `captura ${cap.n} cartas` : 'se queda en la mesa';
+  if (cobra && !special) what = `${cobra.txt.toLowerCase()} — ${what}`;
+  if (res.take.length || special) {
+    const glow = special && ['bac','rebac','sv'].includes(special.k) && sim.chain ? sim.chain.cards.map(c => c.id) : [];
+    fx = { card: res.card, take: res.take, p, slot, glow };
+    const who = special ? special.p : p;
+    narr = `${cobra ? cobra.txt + '. ' : ''}${special ? `<b>${NAMES[who]}</b>: <b>${special.txt}</b> +${special.pts}` : cap ? `<b>${NAMES[p]}</b> captura ${cap.n} cartas.` : ''}`;
+    render();
+    if (special) await callout(special.txt, `${NAMES[who]} · +${special.pts}`);
+    else await sleep(1100);
+  } else await sleep(300);
+  fx = null;
+  sim.bubbles[p] = cap ? cap.txt : '';
+  if (special) sim.bubbles[special.p] = special.txt.replace(/[¡!]/g, '');
+  say(sim, `${p === 0 ? 'Juegas' : NAMES[p] + ' juega'} ${cardName(res.card)} — ${res.ev.map(e => e.txt).join(' · ')}.`);
+  const roundBefore = sim.round;
+  afterPlay(sim);
+  if (sim.round !== roundBefore && sim.phase !== 'handEnd') sim.bubbles = sim.bubbles.map((b, i) => sim.sung && sim.sung[i] ? b : '');
+  S = sim;
+  if (S.round !== roundBefore && S.phase !== 'handEnd' && S.phase !== 'gameEnd') {
+    render(); await drainFeed(true);
+    narr = `Reparto ${S.round} de 3.`;
+    await animateDeal(false);
+  }
+  render();
+  await drainFeed();
+}
+
+// Animación de reparto: los paquetes de 3 cartas salen de quien reparte hacia cada jugador
+async function animateDeal(withTable) {
+  const seq = S.dealSeq || [];
+  dealView = { n: [0,0,0,0], table: !withTable, tableIds: new Set(), temp: null };
+  render();
+  await sleep(450);
+  const center = el => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
+  const src = S.dealer === 0 ? $('hand') : ($('seat' + S.dealer).querySelector('.av') || $('seat' + S.dealer));
+  const [ox, oy] = center(src);
+  const slotXY = sl => { const r = $('table').getBoundingClientRect(); const [x, y] = SLOTPOS[sl.i]; return [r.left + r.width * (x + sl.dx) / 100, r.top + r.height * (y + sl.dy) / 100]; };
+  const fly = async (from, to) => {
+    if (reduce) return;
+    const f = document.createElement('div'); f.className = 'fly'; f.innerHTML = '<span class="back"></span>'; document.body.appendChild(f);
+    const w = f.offsetWidth / 2, h = f.offsetHeight / 2;
+    const a = f.animate([{ transform: `translate(${from[0] - w}px,${from[1] - h}px) scale(.75)` }, { transform: `translate(${to[0] - w}px,${to[1] - h}px) scale(1)` }], { duration: 230 * SPEEDS[speedIx][1], easing: 'cubic-bezier(.3,.7,.3,1)' });
+    await a.finished.catch(() => {}); f.remove();
+  };
+  for (const st of seq) {
+    if (st.to === 'T') {
+      await fly([ox, oy], slotXY(st.slot));
+      if (st.pixat) {
+        dealView.temp = { card: st.card, slot: st.slot }; renderTable();
+        narr = `<b>S'ha pixat:</b> ${RNA[st.card.r]} ya estaba en el tapete. Vuelve al mazo.`; $('narr').innerHTML = narr;
+        await callout("S'ha pixat", SETTINGS.socarrat ? `${TEAMN[1 - team(S.dealer)]} · +1` : `${RN[st.card.r]} repetido`);
+        dealView.temp = null; renderTable();
+        await fly(slotXY(st.slot), [ox, oy]);
+      } else { dealView.tableIds.add(st.card.id); renderTable(); }
+    } else {
+      const p = st.to;
+      await fly([ox, oy], center(p === 0 ? $('hand') : ($('seat' + p).querySelector('.backs') || $('seat' + p))));
+      dealView.n[p]++; p === 0 ? renderHand() : renderSeat(p);
+    }
+  }
+  dealView = null; render();
+  await sleep(700);
+}
+async function beginHand() {
+  busy = true;
+  try { await animateDeal(true); await drainFeed(); } finally { busy = false; }
+  render(); loop();
+}
+
+async function loop() {
+  if (busy) return; busy = true;
+  try {
+    while (!S.over || S.phase === 'play') {
+      while (!$('overlay').hidden && !['handEnd','gameEnd'].includes(S.phase)) await new Promise(r => setTimeout(r, 200));
+      save();
+      if (S.over) break;
+      if (S.phase === 'play') {
+        if (S.turn === 0) break;
+        render();
+        await sleep(700);
+        if (botSing(S, S.turn)) { render(); await drainFeed(); continue; }
+        await sleep(500);
+        await doPlay(S.turn, botChoose(S, S.turn));
+      } else if (S.phase === 'nit') {
+        if (humanSpeaks(S)) break;
+        render();
+        await sleep(1200);
+        botBet(S); render(); await drainFeed();
+      } else break;
+    }
+  } finally { busy = false; save(); render(); }
+}
+
+function showPanel(html) { $('panel').classList.remove('menu'); $('panel').innerHTML = html; $('overlay').hidden = false; const f = $('panel').querySelector('button'); if (f) f.focus(); }
+function closePanel() { $('overlay').hidden = true; }
+
+function scoreLine(i) { const [n, w] = scoreTxt(S.score[i]); return `${n} ${w}`; }
+
+function showSummary() {
+  if (S.phase === 'gameEnd') {
+    const why = 'Han llegado a 40 durante la mano.';
+    showPanel(`<h2>${S.winner === 0 ? '¡Habéis ganado la partida!' : 'Han ganado la partida ellos'}</h2><p class="big-result">${why}</p><p style="text-align:center">Nosotros ${scoreLine(0)} · Ellos ${scoreLine(1)}</p><div class="acts"><button class="btn primary" type="button" data-act="newgame">Nueva partida</button></div>`);
+    return;
+  }
+  const R = S.summary; if (!R) return;
+  const row = (l, k) => `<tr><td>${l}</td><td>${R[0][k]}</td><td>${R[1][k]}</td></tr>`;
+  const title = S.over ? (S.winner === 0 ? '¡Habéis ganado la partida!' : 'Han ganado la partida ellos') : `Fin de la mano ${S.handNo}`;
+  showPanel(`<h2>${title}</h2>
+  <table class="sum"><thead><tr><th></th><th class="us">Nosotros</th><th class="them">Ellos</th></tr></thead><tbody>
+  ${row('Cartas', 'cards')}${row('Puntos por cartas (más de 20)', 'cardPts')}${row('Bac', 'bac')}${row('Rebac', 'rebac')}${row('Sant Vicent', 'sv')}${row('Limpia', 'limpia')}${row('De nit', 'nit')}${(R[0].pixat || R[1].pixat) ? row("S'ha pixat", 'pixat') : ''}
+  <tr class="tot"><td>Total de la mano</td><td>${R[0].total}</td><td>${R[1].total}</td></tr>
+  <tr class="tot"><td>Marcador</td><td>${scoreLine(0)}</td><td>${scoreLine(1)}</td></tr></tbody></table>
+  ${(S.duelNotes || []).map(t => `<p>${t}</p>`).join('')}
+  <div class="acts">${S.over ? '<button class="btn primary" type="button" data-act="newgame">Nueva partida</button>' : '<button class="btn primary" type="button" data-act="nexthand">Siguiente mano</button>'}</div>`);
+}
+
+function showRules() {
+  showPanel(`<h2>Reglas del Cau</h2>
+  <p>Cuatro jugadores en dos parejas, baraja española de 40 cartas. Se juega hacia la derecha. Solo cuenta el número, nunca el palo.</p>
+  <h3>Reparto</h3><ul><li>3 cartas a cada uno y 4 a la mesa, todas de números distintos (si se repite una, se cambia).</li><li>Cuando nadie tiene cartas se reparten otras 3. Hay 3 repartos por mano y cada reparto empieza jugada nueva.</li></ul>
+  <h3>Jugar</h3><ul><li>Si tu carta tiene el mismo número que una de la mesa, la capturas.</li><li>Escala: te llevas también las cartas siguientes que haya en la mesa (5 → 6 → 7 → sota → caballo → rey).</li><li>Si no capturas, tu carta se queda en la mesa.</li></ul>
+  <h3>Jugadas especiales</h3>
+  <div class="pts"><div><b>Bac · 2</b><span>Matas la carta que acaba de dejar el jugador anterior.</span></div><div><b>Rebac · 3</b><span>El siguiente mata el bac: el bac pierde sus 2 puntos.</span></div><div><b>Sant Vicent · 4</b><span>La cuarta carta mata el rebac: el rebac pierde sus 3.</span></div><div><b>Limpia · 1</b><span>Dejas la mesa vacía.</span></div></div>
+  <p>El bac queda pendiente en la mesa hasta que juega el siguiente. Si hace rebac, la escala es para él. Si el bac deja la mesa vacía también es limpia (3 puntos), y si le hacen rebac la limpia pasa al que lo hace.</p>
+  <h3>De nit</h3><ul><li>Con pareja en la mano, cantas «de nit» en tu turno, antes de jugar. Tienes que pulsar el botón; si juegas sin cantar, lo pierdes.</li><li>Con rondín (trío), si nadie te discute el de nit, vuelves a cantar cuando te quedan dos cartas: otro punto.</li><li>Cuando alguien canta, los demás que también tienen lo dicen en ese momento. En el último reparto cantan todos al principio.</li><li>Si solo canta una pareja, se apunta 1 por cada canto (tú y tu compañera, 2).</li><li>Si cantan las dos parejas, los puntos de los cantos se pierden y solo hablan los que han cantado: <b>xic</b> (1), <b>xac</b> (lo aceptas), <b>envide</b> (2), <b>torne a envidar</b> (+2) o <b>la partida</b>. Se cobra solo lo apostado.</li><li>Si el primero que habla pasa, la otra pareja gana 1. Si no se quiere una apuesta (o se pasa a un xic), el que apostó cobra lo que ya estaba aceptado, como mínimo 1. Nunca pueden pasar los dos.</li><li>Quién gana el de nit hablado no se sabe hasta que acaba ese reparto.</li><li>Gana la jugada más alta: rondín a pareja, y entre iguales la más alta (rey > caballo > sota > 7 … > as). Si empatan, gana quien es mano.</li></ul>
+  <h3>Puntos</h3><ul><li>Se juega a 40: los primeros 20 son «malas» y los siguientes 20, «buenas». Gana quien llega a 40, en el momento en que llega.</li><li>Al final de cada mano, quien captura el último se lleva lo que queda en la mesa (no es limpia), y cada pareja suma un punto por cada carta que pase de 20.</li></ul>
+  <h3>Dudas pendientes</h3><ul><li>Si dos de nit son iguales (por ejemplo, pareja de cincos contra pareja de cincos), ahora gana quien es mano.</li><li>Si os jugáis la partida en el de nit y una pareja llega a 40 antes de acabar la mano, ahora gana esa pareja y el de nit no se mira.</li></ul>
+  <div class="acts"><button class="btn primary" type="button" data-act="close">Cerrar</button></div>`);
+}
+
+function showLog() {
+  const items = S.log.slice(-150).reverse().map(l => `<li class="${l.k === 'hand' ? 'hand' : ''}">${l.txt}</li>`).join('');
+  showPanel(`<h2>Historial</h2><ul class="log">${items}</ul><div class="acts"><button class="btn primary" type="button" data-act="close">Cerrar</button></div>`);
+}
+
+let hasSaved = false, panelBack = null;
+const LVL = [['facil','Fácil'],['normal','Normal'],['dificil','Difícil']];
+const seg = (key, opts, cur, two) => `<div class="seg ${two ? 'two' : ''}" role="group">${opts.map(([v, l]) => `<button type="button" data-set="${key}" data-val="${v}" aria-pressed="${String(cur) === String(v)}">${l}</button>`).join('')}</div>`;
+function showMenu() {
+  panelBack = null;
+  const cont = hasSaved && S && !S.over ? `<button class="btn primary" type="button" data-act="continue">Continuar partida</button>` : '';
+  showPanel(`<div class="menu" style="display:flex;flex-direction:column;gap:14px"><div class="logo">Cau</div><p class="tag">El joc de cartes de les filaes d'Alcoi</p><div class="stack">${cont}<button class="btn ${cont ? '' : 'primary'}" type="button" data-act="newgame">Nueva partida</button><button class="btn" type="button" data-act="settings">Ajustes</button><button class="btn" type="button" data-act="rules">Reglas</button></div></div>`);
+  $('panel').classList.add('menu');
+}
+function showSettings() {
+  panelBack = 'menu';
+  showPanel(`<h2>Ajustes</h2>
+  <div class="opt"><label>Tu compañera (Maria)</label>${seg('partner', LVL, SETTINGS.partner)}</div>
+  <div class="opt"><label>Rivales (Toni y Vicent)</label>${seg('rivals', LVL, SETTINGS.rivals)}</div>
+  <p class="desc" style="font-size:13px;color:var(--ink-soft)">Fácil: mira solo lo que gana en el momento y se equivoca a menudo. Normal: además calcula si el siguiente le puede hacer bac, aunque a veces se despista. Difícil: se imagina repartos posibles de las cartas que no ve y simula la vuelta entera. Ninguno ve tus cartas.</p>
+  <div class="opt"><label>Ayudas en tus cartas</label>${seg('hints', [[false,'Quitadas'],[true,'Puestas']], SETTINGS.hints, true)}<span class="desc">Muestran debajo de cada carta qué pasa si la juegas (Captura 3, Bac +2…).</span></div>
+  <div class="opt"><label>Etiquetas bajo el nombre</label>${seg('labels', [[false,'Quitadas'],[true,'Puestas']], SETTINGS.labels, true)}<span class="desc">Recuerdan la última jugada de cada uno (Bac, Limpia, Captura 2…). El «De nit» se ve siempre.</span></div>
+  <div class="opt"><label>Sóc socarrat</label>${seg('socarrat', [[false,'No'],[true,'Sí']], SETTINGS.socarrat, true)}<span class="desc">A la manera de Cocentaina: cada vez que s'ha pixat al repartir, la pareja que no reparte se apunta un punto.</span></div>
+  <div class="opt"><label>Baraja</label>${seg('deck', [['moderna','Moderna'],['clasica','Clásica']], SETTINGS.deck, true)}<span class="desc">La clásica es la baraja libre «Naipes Libres».</span></div>
+  <div class="opt"><label>Ritmo</label>${seg('speed', [[0,'Lento'],[1,'Normal'],[2,'Rápido']], speedIx)}</div>
+  <div class="acts"><button class="btn primary" type="button" data-act="back">Volver</button></div>`);
+}
+function startNewGame() { S = newGame(); S.feed = []; narr = `Mano 1. Reparte ${NAMES[S.dealer]}.`; hasSaved = true; closePanel(); beginHand(); }
+
+$('hand').addEventListener('click', async e => {
+  const b = e.target.closest('.hc'); if (!b || b.disabled) return;
+  if (!myTurn()) return;
+  busy = true;
+  try { await doPlay(0, +b.dataset.id); } finally { busy = false; }
+  loop();
+});
+$('bottom').addEventListener('click', async e => {
+  const sb = e.target.closest('[data-sing]');
+  if (sb && !busy) {
+    const k = sb.dataset.sing;
+    busy = true;
+    try {
+      const waiting = S.phase === 'singLast' || S.phase === 'singResp';
+      if (k === 'first' && canFirst(S, 0)) startSing(S, 0);
+      else if (k === 'second' && canSecond(S, 0)) singSecond(S, 0);
+      else if (k === 'resp' && waiting) { sing(S, 0); resolveNit(S); }
+      else if (k === 'skip' && waiting) { say(S, 'No cantas de nit.'); resolveNit(S); }
+      render(); await drainFeed();
+    } finally { busy = false; }
+    render(); loop();
+    return;
+  }
+  const b = e.target.closest('[data-bet]'); if (!b || busy || !humanSpeaks(S)) return;
+  busy = true;
+  try { betAct(S, 0, b.dataset.bet); render(); await drainFeed(); } finally { busy = false; }
+  render(); loop();
+});
+$('panel').addEventListener('click', e => {
+  const sb = e.target.closest('[data-set]');
+  if (sb) {
+    const k = sb.dataset.set, v = sb.dataset.val;
+    if (k === 'hints' || k === 'labels' || k === 'socarrat') SETTINGS[k] = v === 'true';
+    else if (k === 'speed') speedIx = +v;
+    else SETTINGS[k] = v;
+    saveSettings(); showSettings(); render(); return;
+  }
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const a = b.dataset.act;
+  if (a === 'close') { if (panelBack === 'menu') showMenu(); else closePanel(); }
+  if (a === 'newgame') startNewGame();
+  if (a === 'continue') { closePanel(); render(); loop(); }
+  if (a === 'settings') showSettings();
+  if (a === 'rules') { showRules(); panelBack = 'menu'; }
+  if (a === 'back') showMenu();
+  if (a === 'nexthand') { S.dealer = (S.dealer + 1) % 4; newHand(S); S.feed = []; narr = `Mano ${S.handNo}. Reparte ${NAMES[S.dealer]}.`; closePanel(); beginHand(); }
+});
+const closable = () => !$('panel').classList.contains('menu') && !['handEnd','gameEnd'].includes(S.phase) && panelBack !== 'menu';
+$('overlay').addEventListener('click', e => { if (e.target === $('overlay') && closable()) closePanel(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('overlay').hidden && closable()) closePanel(); });
+$('btnRules').addEventListener('click', () => { panelBack = null; showRules(); });
+$('btnLog').addEventListener('click', () => { panelBack = null; showLog(); });
+$('btnMenu').addEventListener('click', showMenu);
+
+window.CAU = { newGame, newHand, applyPlay, afterPlay, botChoose, botChooseHard, botChooseNormal, botChooseEasy, botBet, botSing, SETTINGS, betAct, betOptions, sing, startSing, resolveNit, canFirst, canSecond, cardSVG, get S() { return S; } };
+
+function start(data) {
+  if (data && data.S) { S = data.S; S.feed = []; hasSaved = true; render(); loop(); return; }
+  const saved = load();
+  if (saved && !saved.slots) {   // partidas guardadas con la versión anterior
+    saved.slots = {}; const tb = saved.table; saved.table = [];
+    for (const c of tb) { saved.slots[c.id] = pickSlot(saved); saved.table.push(c); }
+    if (saved.chain) saved.chain.slot = pickSlot(saved);
+  }
+  hasSaved = !!(saved && !saved.over);
+  S = saved || newGame(); S.feed = [];
+  render(); showMenu();
+}
+window.claude?.hot?.snapshot?.(() => ({ S }));
+window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+})();
+</script>
+
+<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('./sw.js').catch(()=>{});});}</script>
+</body>
+</html>
