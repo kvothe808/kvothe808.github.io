@@ -157,14 +157,20 @@ button{font:inherit;color:inherit}
 .log li{padding:4px 0;border-bottom:1px solid var(--line)}
 .log li.hand{color:var(--gold);font-weight:700;padding-top:10px}
 .co-slot{position:absolute;transform:translate(-50%,-50%);z-index:2}
-.co-stock{position:absolute;left:4%;top:3%;width:calc(var(--cw)*1.7);height:calc(var(--cw)*1.6)}
-.co-pinta{position:absolute;left:calc(var(--cw)*.45);top:calc(var(--cw)*.2);transform:rotate(90deg);transform-origin:center}
+.co-stock{position:absolute;left:50%;top:50%;width:var(--cw);height:calc(var(--cw)*1.5);transform:translate(-50%,-50%)}
+.co-pinta{position:absolute;left:0;top:0;transform:translateX(52%) rotate(90deg);transform-origin:center}
+.co-stock .back.big{transform:translateX(-22%)}
+.co-count{margin-left:calc(var(--cw)*-.22)}
 .co-pinta .card{--cw:inherit}
 .co-stock .back.big{position:absolute;left:0;top:0;width:var(--cw);height:calc(var(--cw)*1.5);border-radius:6px}
 .co-count{position:absolute;left:calc(var(--cw)*.5);top:calc(var(--cw)*.75);transform:translate(-50%,-50%);background:rgba(27,8,13,.85);color:var(--gold);font-weight:800;font-size:12px;border-radius:999px;padding:1px 7px}
-.co-trump{position:absolute;left:4%;top:3%;font-size:12px;color:var(--ink-soft);background:rgba(0,0,0,.25);padding:3px 9px;border-radius:999px}
+.co-trump{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:12px;color:var(--ink-soft);background:rgba(0,0,0,.25);padding:3px 9px;border-radius:999px}
 .co-trump b{color:var(--gold)}
 .hand.co-hand{gap:4px;flex-wrap:nowrap}
+.co-reveal{display:flex;--cw:30px}
+.co-reveal .card+.card{margin-left:-12px}
+.seat.side .co-reveal{flex-direction:column;align-items:center}
+.seat.side .co-reveal .card+.card{margin-left:0;margin-top:-26px}
 .hand.co-hand .hc .card{--cw:clamp(46px,14.5vw,80px)}
 .seat.co .back+.back{margin-left:-20px}
 .seat.side.co .back+.back{margin-left:0;margin-top:-46px}
@@ -1022,8 +1028,9 @@ function coPlay(G, p, cid) {
   G.lastWinner = w.p; G.lastTrick = { cards: G.trick, winner: w.p, pts, last };
   G.trick = []; G.leader = w.p; G.turn = w.p; G.canSing = t;
   // robar: empieza el que gana la baza
+  G.lastDraw = [];
   if (G.stock.length) for (let k = 0; k < 4; k++) {
-    const q = (w.p + k) % 4, d = G.stock.shift();
+    const q = (w.p + k) % 4, d = G.stock.shift(); G.lastDraw.push({ p: q, id: d.id });
     if (d.id === G.pinta.id) { G.pintaHolder = q; G.pintaHolderCard = d.id; }
     G.hands[q].push(d); coSort(G, G.hands[q]);
   }
@@ -1629,7 +1636,7 @@ $('bottom').addEventListener('click', async e => {
     try {
       if (k === 'sing') { const s = +cb.dataset.s; if (coCantesFor(G, 0).includes(s)) coSing(G, 0, s); }
       if (k === 'nosing') G.cantePass = G.trickNo;
-      if (k === 'swap' && coCanSwap(G, 0)) coSwap(G, 0);
+      if (k === 'swap' && coCanSwap(G, 0)) await coAnimSwap(0);
       render(); await coDrain();
     } finally { busy = false; }
     render(); cotoLoop();
@@ -1710,9 +1717,9 @@ $('btnMenu').addEventListener('click', showMenu);
 let G = null;                                   // partida de Coto en curso
 const APP = { mode: 'cau', M: null };           // mode: 'cau' | 'coto' | 'cotocau'; M: estado del CotoCau
 const isCoto = () => APP.mode === 'coto' || (APP.mode === 'cotocau' && APP.M && APP.M.cur === 'coto');
-let coFx = null, coShowLast = false, coDealView = null;
+let coFx = null, coShowLast = false, coDealView = null, coHide = new Set(), coReveal = false;
 const coScoreTxt = s => s <= 50 ? [s, s === 1 ? 'mala' : L('malas', 'males')] : [s - 50, s - 50 === 1 ? L('buena', 'bona') : L('buenas', 'bones')];
-const CO_POS = [[50, 72], [80, 48], [50, 25], [20, 48]];
+const CO_POS = [[50, 77], [84, 50], [50, 23], [16, 50]];
 
 function renderCoto() {
   document.body.classList.toggle('deck-clasica', SETTINGS.deck === 'clasica');
@@ -1728,20 +1735,21 @@ function renderCoto() {
 }
 function coRenderSeat(p) {
   const el = $('seat' + p); if (!el) return;
-  const n = coDealView ? coDealView.n[p] : G.hands[p].length;
-  const backs = Array.from({ length: n }, () => '<span class="back"></span>').join('');
+  const n = coDealView ? coDealView.n[p] : G.hands[p].filter(c => !coHide.has(c.id)).length;
+  // al acabar la partida a mitad de mano se destapan las cartas que le quedaban a cada uno
+  const backs = coReveal && G.hands[p].length ? `<div class="co-reveal">${G.hands[p].map(c => cardHTML(c)).join('')}</div>` : Array.from({ length: n }, () => '<span class="back"></span>').join('');
   el.className = 'seat ' + (p === 2 ? 'top' : 'side') + ' co' + (G.phase === 'play' && G.turn === p && !coDealView ? ' turn' : '');
   const dealer = G.dealer === p ? `<span class="dealer">${L('Reparte', 'Reparteix')}</span>` : '';
   el.innerHTML = `<div class="av ${team(p) === 0 ? 'us' : ''}">${NAMES[p][0]}</div><div class="who"><span class="nm">${NAMES[p]}</span><span class="sub">${p === 2 ? L('Compañera', 'Companya') : 'Rival'}</span>${dealer}</div><div class="backs">${backs}</div><div class="bubble"></div>`;
 }
 function coRenderTable() {
   const tw = $('table').clientWidth, th = $('table').clientHeight;
-  if (tw && th) $('table').style.setProperty('--cw', Math.max(42, Math.min(70, Math.floor(tw / 3.6), Math.floor(th / 3.3 / 1.5))) + 'px');
+  if (tw && th) $('table').style.setProperty('--cw', Math.max(40, Math.min(66, Math.floor(tw / 4.1), Math.floor(th / 3.6 / 1.5))) + 'px');
   let h = '';
   // montón con la pinta debajo
   if (coDealView ? coDealView.stock : G.stock.length) {
     const n = coDealView ? 16 : G.stock.length;
-    h += `<div class="co-stock"><div class="co-pinta">${cardHTML(G.pinta)}</div>${n > 1 ? `<span class="back big"></span><span class="co-count">${n}</span>` : ''}</div>`;
+    h += `<div class="co-stock" id="costock"><div class="co-pinta" id="copinta">${cardHTML(G.pinta)}</div>${n > 1 ? `<span class="back big"></span><span class="co-count">${n}</span>` : ''}</div>`;
   } else if (!coDealView) h += `<div class="co-trump">${L('Pintan', 'Pinten')} <b>${SUITN[G.trump]}</b></div>`;
   const trick = coShowLast && G.lastTrick ? G.lastTrick.cards : G.trick;
   const win = coShowLast && G.lastTrick ? G.lastTrick.winner : null;
@@ -1755,7 +1763,7 @@ function coMyLegal() { return G.phase === 'play' && G.turn === 0 && !busy && !co
 function coRenderHand() {
   const legal = coMyLegal(), n = coDealView ? coDealView.n[0] : 6;
   $('hand').classList.add('co-hand');
-  $('hand').innerHTML = G.hands[0].slice(0, n).map(c => `<button class="hc" type="button" data-id="${c.id}" ${legal.includes(c.id) ? '' : 'disabled'}>${cardHTML(c)}</button>`).join('');
+  $('hand').innerHTML = G.hands[0].filter(c => !coHide.has(c.id)).slice(0, n).map(c => `<button class="hc" type="button" data-id="${c.id}" ${legal.includes(c.id) ? '' : 'disabled'}>${cardHTML(c)}</button>`).join('');
 }
 function coRenderBottom() {
   const el = $('bottom');
@@ -1780,6 +1788,38 @@ async function coDrain() {
     else if (i.k === 'pts') { narr = i.txt; render(); await sleep(1300); }
   }
 }
+const coCenter = el => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
+const coSeatTarget = p => p === 0 ? $('hand') : ($('seat' + p).querySelector('.backs') || $('seat' + p));
+async function coFly(from, to, html, ms = 260) {
+  if (reduce) return;
+  const f = document.createElement('div'); f.className = 'fly'; f.innerHTML = html; document.body.appendChild(f);
+  const w = f.offsetWidth / 2, h = f.offsetHeight / 2;
+  const a = f.animate([{ transform: `translate(${from[0] - w}px,${from[1] - h}px)` }, { transform: `translate(${to[0] - w}px,${to[1] - h}px)` }], { duration: ms * SPEEDS[speedIx][1], easing: 'cubic-bezier(.3,.7,.3,1)' });
+  await a.finished.catch(() => {}); f.remove();
+}
+// después de cada baza: cada uno roba del montón, empezando por quien la ha ganado
+async function coAnimDraw() {
+  const draws = G.lastDraw || []; if (!draws.length) return;
+  draws.forEach(d => coHide.add(d.id));
+  render();
+  const st = $('costock'), origin = st ? coCenter(st) : coCenter($('table'));
+  for (const d of draws) {
+    const isPinta = !G.stock.length && d === draws[draws.length - 1];
+    await coFly(origin, coCenter(coSeatTarget(d.p)), isPinta || d.p === 0 ? `<div style="--cw:46px">${cardHTML(coCard(d.id))}</div>` : '<span class="back"></span>', 240);
+    coHide.delete(d.id); d.p === 0 ? coRenderHand() : coRenderSeat(d.p);
+  }
+  G.lastDraw = [];
+  render();
+}
+// cambiar el 7: el 7 va al centro y la pinta va a la mano de quien lo cambia
+async function coAnimSwap(p) {
+  const seven = G.hands[p].find(c => c.s === G.trump && c.r === C_SIETE), pinta = G.pinta;
+  const from = coCenter(coSeatTarget(p)), pc = $('copinta') ? coCenter($('copinta')) : coCenter($('table'));
+  await coFly(from, pc, `<div style="--cw:50px">${cardHTML(seven)}</div>`, 420);
+  coSwap(G, p); coHide.add(pinta.id); render();
+  await coFly(pc, from, `<div style="--cw:50px">${cardHTML(pinta)}</div>`, 420);
+  coHide.delete(pinta.id); render();
+}
 async function coDoPlay(p, id) {
   const c = G.hands[p].find(x => x.id === id);
   coFx = { p, id };
@@ -1789,7 +1829,11 @@ async function coDoPlay(p, id) {
   coShowLast = true; render(); await sleep(750);
   narr = `<b>${NAMES[r.winner]}</b> ${r.winner === 0 ? L('ganas la baza', 'guanyes la basa') : L('gana la baza', 'guanya la basa')}: ${r.pts} ${L('puntos', 'punts')}${r.last ? L(' (con las 10 de últimas)', " (amb les 10 d'últimes)") : ''}.`;
   render(); await callout(r.pts >= 10 ? `+${r.pts}` : L('Baza', 'Basa'), NAMES[r.winner]);
-  coShowLast = false; coFx = null; render();
+  coShowLast = false; coFx = null;
+  if (G.phase !== 'play' && G.hands.some(h => h.length)) {   // se han salido a mitad de mano: se destapan las cartas
+    coReveal = true; render(); await coDrain(); await sleep(2600); coReveal = false; render(); return;
+  }
+  await coAnimDraw();
   await coDrain();
 }
 async function cotoLoop() {
@@ -1806,7 +1850,7 @@ async function cotoLoop() {
       if (G.turn === 0) break;
       render(); await sleep(650);
       const p = G.turn;
-      if (coCanSwap(G, p)) { coSwap(G, p); render(); await coDrain(); }
+      if (coCanSwap(G, p)) { await coAnimSwap(p); await coDrain(); }
       await sleep(350);
       await coDoPlay(p, coBotChoose(G, p, levelOf(p)));
     }
@@ -1953,7 +1997,7 @@ function showPassword(target, wrong) {
   setTimeout(() => { const i = $('pw'); if (i) i.focus(); }, 50);
 }
 
-window.CAU = { APP, cotoNewMatch, coBotChoose, coPlay, coLegal, get G() { return G; }, set G(v) { G = v; }, set S(v) { S = v; }, render, matchNext, newGame, newHand, applyPlay, afterPlay, INFER, SMART, holdProb, determinize, botChoose, botChooseHard, botChooseNormal, botChooseEasy, botChooseDificil, botChooseExperto, botBet, botSing, SETTINGS, betAct, betOptions, sing, startSing, resolveNit, canFirst, canSecond, cardSVG, get S() { return S; } };
+window.CAU = { APP, cotoNewMatch, coSwap, coCanSwap, coBotChoose, coPlay, coLegal, get G() { return G; }, set G(v) { G = v; }, set S(v) { S = v; }, render, matchNext, newGame, newHand, applyPlay, afterPlay, INFER, SMART, holdProb, determinize, botChoose, botChooseHard, botChooseNormal, botChooseEasy, botChooseDificil, botChooseExperto, botBet, botSing, SETTINGS, betAct, betOptions, sing, startSing, resolveNit, canFirst, canSecond, cardSVG, get S() { return S; } };
 
 function start(data) {
   if (data && data.app) { Object.assign(APP, data.app); S = data.S; G = data.G; if (S) S.feed = []; if (G) G.feed = []; hasSaved = true; render(); loop(); return; }
