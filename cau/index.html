@@ -955,6 +955,7 @@ function cotoNewHand(G) {
   }
   G.pinta = G.deck.pop(); G.trump = G.pinta.s;
   G.stock = G.deck.slice().reverse().concat([G.pinta]); G.deck = [];   // se roba por arriba; la pinta es la última
+  G.dealOrder = G.hands[0].map(c => c.id);   // orden en que te llegan (se ordenan al acabar de repartir)
   G.hands.forEach(h => coSort(G, h));
   G.leader = (G.dealer + 1) % 4; G.turn = G.leader;
   G.trick = []; G.lastTrick = null; G.won = [0, 0]; G.pts = [0, 0]; G.cantes = [0, 0]; G.ultimas = [0, 0];
@@ -1413,7 +1414,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-10-30-14';
+const APP_VER = 'cau-2026-10-30-15';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
@@ -2031,7 +2032,8 @@ function coRenderHand() {
   if (!isCoto()) return;
   const legal = coMyLegal(), n = coDealView ? coDealView.n[0] : 6;
   $('hand').classList.add('co-hand');
-  $('hand').innerHTML = G.hands[0].filter(c => !coHide.has(c.id)).slice(0, n).map(c => `<button class="hc" type="button" data-id="${c.id}" ${legal.includes(c.id) ? '' : 'disabled'}>${cardHTML(c)}</button>`).join('');
+  const order = coDealView && G.dealOrder ? G.dealOrder.map(id => G.hands[0].find(c => c.id === id)).filter(Boolean) : G.hands[0];
+  $('hand').innerHTML = order.filter(c => !coHide.has(c.id)).slice(0, n).map(c => `<button class="hc" type="button" data-id="${c.id}" ${legal.includes(c.id) ? '' : 'disabled'}>${cardHTML(c)}</button>`).join('');
 }
 function coRenderBottom() {
   const el = $('bottom');
@@ -2154,7 +2156,16 @@ async function animateCotoDeal() {
   coDealView.stock = true; coRenderTable();
   await sleep(500);
   if (gen !== GEN) return;
+  // se ordena la mano (triunfos a la derecha) con una pequeña animación
+  const before = {}; $('hand').querySelectorAll('.hc').forEach(b => before[b.dataset.id] = b.getBoundingClientRect().left);
   coDealView = null;
+  render();
+  if (!reduce) {
+    const anims = [];
+    $('hand').querySelectorAll('.hc').forEach(b => { const dx = (before[b.dataset.id] ?? 0) - b.getBoundingClientRect().left; if (Math.abs(dx) > 1) anims.push(b.animate([{ transform: `translate(${dx}px,-14px)` }, { transform: 'translate(0,-14px)', offset: .75 }, { transform: 'translate(0,0)' }], { duration: 520 * SPEEDS[speedIx][1], easing: 'cubic-bezier(.3,.7,.3,1)' }).finished.catch(() => {})); });
+    await Promise.all(anims);
+    if (gen !== GEN) return;
+  }
   narr = L(`Pintan <b>${SUITN[G.trump]}</b>.`, `Pinten <b>${SUITN[G.trump]}</b>.`);
   render(); await callout(L(`Pintan ${SUITN[G.trump]}`, `Pinten ${SUITN[G.trump]}`), cardName(G.pinta));
 }
