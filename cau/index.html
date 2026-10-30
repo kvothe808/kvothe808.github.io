@@ -155,6 +155,21 @@ button{font:inherit;color:inherit}
 .big-result{font:800 20px var(--f-display);text-align:center;color:var(--gold)}
 .log{list-style:none;padding:0 !important;margin:0;display:flex;flex-direction:column;gap:2px !important;font-size:13.5px}
 .log li{padding:4px 0;border-bottom:1px solid var(--line)}
+.chips{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;align-items:center;align-self:center;max-width:100%}
+.seat.side .chips{flex-direction:column;flex-wrap:nowrap;align-items:center;gap:2px}
+.seat.side .chips .chip{font-size:11px;padding:0 4px}
+.chip{display:inline-flex;align-items:baseline;gap:1px;font:800 12.5px var(--f-body);background:#f4ecdb;color:#2a1a10;border-radius:5px;padding:1px 5px;box-shadow:0 1px 2px rgba(0,0,0,.35);white-space:nowrap}
+.chip i{font-style:normal;font-size:.8em;font-weight:900}
+.chip.s0 i{color:#b8860b}.chip.s1 i{color:#c0392b}.chip.s2 i{color:#2c5d9e}.chip.s3 i{color:#2e7d32}
+.chip.tr{outline:2px solid var(--gold)}
+.lastfelt{position:relative;height:250px;border-radius:16px;background:radial-gradient(ellipse at center,#1f6b46,#0f3d27);margin:6px 0 10px;--cw:54px;overflow:hidden}
+.lastfelt .ls{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:3px;animation:lsIn .45s cubic-bezier(.2,.8,.3,1.2) both}
+.lastfelt .ls small{font-size:11px;font-weight:700;color:#fff;background:rgba(0,0,0,.35);border-radius:999px;padding:0 7px}
+.lastfelt .ls.win small{background:var(--gold);color:#2a1a10}
+.lastfelt .ls.win .card{box-shadow:0 0 0 3px var(--gold),0 6px 14px rgba(0,0,0,.45)}
+@keyframes lsIn{from{opacity:0;left:50%;top:50%;transform:translate(-50%,-50%) scale(.4) rotate(-20deg)}}
+.lastinfo{text-align:center;font-weight:700}
+.exp{width:100%;min-height:150px;font:12px ui-monospace,monospace;background:rgba(0,0,0,.25);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:8px}
 .log li.hand{color:var(--gold);font-weight:700;padding-top:10px}
 .co-slot{position:absolute;transform:translate(-50%,-50%);z-index:2}
 .co-stock{position:absolute;left:50%;top:50%;width:var(--cw);height:calc(var(--cw)*1.5);transform:translate(-50%,-50%)}
@@ -238,6 +253,7 @@ button{font:inherit;color:inherit}
     <button class="btn" id="btnMenu" type="button">Menú</button>
     <button class="btn" id="btnRules" type="button">Reglas</button>
     <button class="btn" id="btnLog" type="button">Historial</button>
+    <button class="btn" id="btnLast" type="button" hidden>Última baza</button>
   </nav>
   <section class="board" aria-label="Mesa">
     <div class="seat top" id="seat2"></div>
@@ -283,13 +299,16 @@ const team = p => p % 2;
 const ALL = []; for (let s = 0; s < 4; s++) for (let r = 0; r < 10; r++) ALL.push({ id: s*10 + r, r, s });
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const clone = o => JSON.parse(JSON.stringify(o));
-const cloneLite = o => { const { log, feed, ...rest } = o; const c = JSON.parse(JSON.stringify(rest)); c.log = []; c.feed = []; return c; };
+const cloneLite = o => { const { log, feed, rec, prevRec, ...rest } = o; const c = JSON.parse(JSON.stringify(rest)); c.log = []; c.feed = []; return c; };
 const cardName = c => `${RNA[c.r]} ${ofSuit(c.s)}`;
 const emptyBon = () => ({ bac:0, rebac:0, sv:0, limpia:0, nit:0, pixat:0 });
 const bonSum = b => b.bac + b.rebac + b.sv + b.limpia + b.nit + (b.pixat || 0);
 const scoreTxt = s => s < 20 ? [s, s === 1 ? 'mala' : L('malas', 'males')] : [s - 20, s - 20 === 1 ? L('buena', 'bona') : L('buenas', 'bones')];
 
-function say(S, txt, k) { S.log.push({ txt, k: k || '' }); if (S.log.length > 500) S.log.splice(0, S.log.length - 500); S.feed.push({ txt, k: k || '' }); }
+// notación corta para el registro: número + palo (o oros, c copas, e espadas, b bastos)
+const cn = c => `${RV[c.r]}${'oceb'[c.s]}`;
+const SEATC = ['Tú', 'D', 'C', 'I'];
+function say(S, txt, k) { if (S.rec) S.rec.lines.push(txt); S.log.push({ txt, k: k || '' }); if (S.log.length > 500) S.log.splice(0, S.log.length - 500); S.feed.push({ txt, k: k || '' }); }
 
 function addPts(S, t, k, n) {
   S.bon[t][k] += n; S.score[t] += n;
@@ -312,6 +331,8 @@ function newHand(S) {
   S.cap = [0,0]; S.bon = [emptyBon(), emptyBon()]; S.public = []; S.lastCapturer = null;
   S.round = 0; S.bet = null; S.summary = null; S.duels = []; S.duelNotes = []; S.endMid = false; S.bubbles = ['','','',''];
   S.turn = (S.dealer + 1) % 4;
+  S.prevRec = S.rec || null;
+  S.rec = { game: 'cau', handNo: S.handNo, dealer: S.dealer, score: S.score.slice(), levels: [SETTINGS.partner, SETTINGS.rivals], socarrat: !!SETTINGS.socarrat, deals: [], lines: [] };
   say(S, L(`Mano ${S.handNo}. Reparte ${NAMES[S.dealer]}.`, `Mà ${S.handNo}. Reparteix ${NAMES[S.dealer]}.`), 'hand');
   // Reparto real: una al centro, una a cada jugador, otra al centro… (4 al centro y 3 a cada uno)
   S.dealSeq = []; S.aside = [];
@@ -325,6 +346,7 @@ function newHand(S) {
   for (const c of S.aside) S.deck.splice(Math.floor(Math.random() * (S.deck.length + 1)), 0, c);
   S.asideIds = S.aside.map(c => c.id);
   S.round = 1;
+  if (S.rec) S.rec.deals.push({ round: 1, table: S.table.map(cn), pixat: S.aside.map(cn), hands: S.hands.map(h => h.map(cn)), score: S.score.slice() });
   postDeal(S);
 }
 // Una carta al centro. Si su número ya está en el tapete «s'ha pixat»: vuelve al mazo, se baraja y sale otra
@@ -361,6 +383,7 @@ function deal(S) {
   S.lastPlay = null;                // cada reparto empieza jugada nueva: no hay bac sobre la última carta
   S.dealSeq = [];
   for (let k = 0; k < 3; k++) for (let i = 0; i < 4; i++) { const p = (S.dealer + 1 + i) % 4, c = S.deck.pop(); S.hands[p].push(c); S.dealSeq.push({ to: p, id: c.id }); }
+  if (S.rec) S.rec.deals.push({ round: S.round, table: S.table.map(cn), hands: S.hands.map(h => h.map(cn)), score: S.score.slice() });
   postDeal(S);
 }
 function postDeal(S) {
@@ -646,7 +669,7 @@ function evalPlay(S, p, cid) {
 /* Niveles: fácil (solo mira lo que gana ya, y a veces se equivoca),
    normal (lo que gana menos el riesgo de que el siguiente le haga bac o capture),
    difícil (imagina repartos posibles de las cartas ocultas y simula la vuelta entera) */
-let SETTINGS = { partner: 'experto', rivals: 'normal', hints: false, labels: false, socarrat: false, speed: 1, deck: 'moderna', lang: 'es', names: ['Toni','Maria','Vicent'], cotoBest: 5, unlocked: false };
+let SETTINGS = { partner: 'experto', rivals: 'normal', hints: false, labels: false, socarrat: false, speed: 1, deck: 'moderna', lang: 'es', names: ['Toni','Maria','Vicent'], cotoBest: 5, unlocked: false, showAll: false };
 try { Object.assign(SETTINGS, JSON.parse(localStorage.getItem('cau.settings') || '{}')); } catch (e) {}
 applyLang(SETTINGS.lang, SETTINGS.names);
 const levelOf = p => p === 2 ? SETTINGS.partner : SETTINGS.rivals;
@@ -937,6 +960,9 @@ function cotoNewHand(G) {
   G.played = []; G.voids = [[], [], [], []]; G.noTrumpOver = [[], [], [], []];
   G.revealed = [[], [], [], []]; G.pintaHolder = null; G.swapped = false;
   G.phase = 'play'; G.handSummary = null;
+  G.prevRec = G.rec || null;
+  G.rec = { game: 'coto', partidaNo: G.partidaNo, handNo: G.handNo, vueltas: G.vueltas, dealer: G.dealer, wins: G.wins.slice(), bestOf: G.bestOf,
+    score: G.score.slice(), pinta: cn(G.pinta), trump: G.trump, levels: typeof SETTINGS !== 'undefined' ? [SETTINGS.partner, SETTINGS.rivals] : [], hands: G.hands.map(h => h.map(cn)), ev: [] };
   coSay(G, L(`${G.vueltas ? 'Mano de vueltas' : 'Mano'}: reparte ${NAMES[G.dealer]}. Pintan ${SUITN[G.trump]}.`,
     `${G.vueltas ? 'Mà de voltes' : 'Mà'}: reparteix ${NAMES[G.dealer]}. Pinten ${SUITN[G.trump]}.`), 'hand');
 }
@@ -980,6 +1006,7 @@ function coCantesFor(G, p) {
 function coSing(G, p, s) {
   const t = team(p), v = s === G.trump ? 40 : 20;
   G.sung.push(s); G.cantes[t] += v; G.score[t] += v;
+  if (G.rec) G.rec.ev.push(`  canta: ${SEATC[p]} ${v === 40 ? 'las 40' : '20 en ' + SUITN[s]} | marcador ${G.score[0]}-${G.score[1]}`);
   for (const id of [s * 10 + C_REY, s * 10 + C_SOTA]) if (!G.revealed[p].includes(id)) G.revealed[p].push(id);
   const who = p === 0 ? L('Cantas', 'Cantes') : `${NAMES[p]} canta`;
   coSay(G, v === 40 ? L(`${who} las 40.`, `${who} les 40.`) : L(`${who} 20 en ${SUITN[s]}.`, `${who} 20 en ${SUITN[s]}.`), 'cante');
@@ -996,6 +1023,7 @@ function coSwap(G, p) {
   const seven = h.splice(i, 1)[0], old = G.pinta;
   h.push(old); coSort(G, h);
   G.pinta = seven; G.stock[G.stock.length - 1] = seven; G.swapped = true;
+  if (G.rec) G.rec.ev.push(`  cambia el 7: ${SEATC[p]} (se lleva ${cn(old)})`);
   if (!G.revealed[p].includes(old.id)) G.revealed[p].push(old.id);
   coSay(G, p === 0 ? L(`Cambias el 7 por ${RNA[old.r]} de ${SUITN[old.s]}.`, `Canvies el 7 per ${RNA[old.r]} ${ofSuit(old.s)}.`) : L(`${NAMES[p]} cambia el 7 por ${RNA[old.r]} de ${SUITN[old.s]}.`, `${NAMES[p]} canvia el 7 per ${RNA[old.r]} ${ofSuit(old.s)}.`), 'swap');
 }
@@ -1015,6 +1043,8 @@ function coPlay(G, p, cid) {
     if (c.s !== lead && c.s !== G.trump && team(w.p) !== team(p) && !G.voids[p].includes(G.trump) && !(w.c.s === G.trump)) G.voids[p].push(G.trump);
   }
   if (G.trick.length === 0) G.canSing = null;          // al salir a la baza siguiente se cierra el cante
+  if (G.rec && G.trick.length === 0) G.rec.cur = `B${G.trickNo + 1} (${G.stock.length ? 'montón ' + G.stock.length : 'arrastre'}): `;
+  if (G.rec) G.rec.cur += `${G.trick.length ? ', ' : ''}${SEATC[p]} ${cn(c)}`;
   G.trick.push({ p, c }); G.played.push(c.id);
   G.revealed[p] = G.revealed[p].filter(id => id !== c.id);
   if (c.id === (G.pintaHolderCard ?? -1)) G.pintaHolder = null;
@@ -1035,11 +1065,13 @@ function coPlay(G, p, cid) {
     const holder = [w.p, (w.p + 2) % 4].find(q => G.hands[q].some(c => c.s === G.trump && c.r === C_SIETE));
     if (holder != null) { G.autoSwap = { p: holder, old: { ...G.pinta } }; coSwap(G, holder); }
   }
+  if (G.rec) G.rec.ev.push(`${G.rec.cur} → ${SEATC[w.p]} +${pts}${last ? ' (con las 10 de últimas)' : ''} | marcador ${G.score[0]}-${G.score[1]}`);
   if (G.stock.length) for (let k = 0; k < 4; k++) {
     const q = (w.p + k) % 4, d = G.stock.shift(); G.lastDraw.push({ p: q, id: d.id });
     if (d.id === G.pinta.id) { G.pintaHolder = q; G.pintaHolderCard = d.id; }
     G.hands[q].push(d); coSort(G, G.hands[q]);
   }
+  if (G.rec && G.lastDraw.length) G.rec.ev.push(`  roban: ${G.lastDraw.map(d => SEATC[d.p] + ' ' + cn(coCard(d.id))).join(', ')}`);
   coSay(G, w.p === 0 ? L(`Ganas la baza (${pts} puntos${last ? ', con las 10 de últimas' : ''}).`, `Guanyes la basa (${pts} punts${last ? ", amb les 10 d'últimes" : ''}).`) : L(`${NAMES[w.p]} gana la baza (${pts} puntos${last ? ', con las 10 de últimas' : ''}).`, `${NAMES[w.p]} guanya la basa (${pts} punts${last ? ', amb les 10 d\'últimes' : ''}).`), 'baza');
   coCheckOut(G, t);
   if (G.phase === 'play' && last) coEndHand(G);
@@ -1052,6 +1084,7 @@ function coEndHand(G) {
     const a = G.score[0] > 100, b = G.score[1] > 100;
     if (a || b) return coEndPartida(G, a && b ? team(G.lastWinner) : (a ? 0 : 1), false);
     G.phase = 'handEnd';
+    if (G.rec) G.rec.ev.push(`FIN DE MANO: nadie llega a 101 | marcador ${G.score[0]}-${G.score[1]} | se juega de vueltas`);
     coSay(G, L(`Nadie llega a 101: se juega de vueltas. ${TEAMN[0]} ${G.score[0]}, ${TEAMN[1]} ${G.score[1]}.`, `Ningú arriba a 101: es juga de voltes. ${TEAMN[0]} ${G.score[0]}, ${TEAMN[1]} ${G.score[1]}.`), 'pts');
     return;
   }
@@ -1060,6 +1093,7 @@ function coEndHand(G) {
 function coEndPartida(G, w, mid) {
   if (!G.handSummary) G.handSummary = [0, 1].map(t => ({ pts: G.pts[t] - G.ultimas[t], cantes: G.cantes[t], ultimas: G.ultimas[t], total: G.pts[t] + G.cantes[t] }));
   G.partidaWinner = w; G.wins[w]++; G.endMid = mid;
+  if (G.rec) G.rec.ev.push(`FIN DE PARTIDA: gana ${TEAMN[w]}${mid ? ' (se salen en la mano de vueltas)' : ''} | marcador ${G.score[0]}-${G.score[1]} | coto ${G.wins[0]}-${G.wins[1]}${mid ? ' | les quedaban: ' + G.hands.map((h, q) => SEATC[q] + '[' + h.map(cn).join(' ') + ']').join(' ') : ''}`);
   coSay(G, L(`${TEAMN[w]} ganan la partida ${G.partidaNo}. Coto: ${G.wins[0]}–${G.wins[1]}.`, `${TEAMN[w]} guanyen la partida ${G.partidaNo}. Coto: ${G.wins[0]}–${G.wins[1]}.`), 'pts');
   if (G.wins[w] >= G.need) { G.over = true; G.winner = w; G.phase = 'cotoEnd'; coSay(G, L(`${TEAMN[w]} ganan el coto.`, `${TEAMN[w]} guanyen el coto.`), 'pts'); }
   else G.phase = 'partidaEnd';
@@ -1163,7 +1197,7 @@ function coBotNormal(G, p) {
 const coBotBest = (G, p) => coKeepTrumps(G, p, coHeur(G, p, CO_BEST), 10);
 // Muy difícil: imagina repartos de lo que no ve (respetando fallos vistos, cantes y quién tiene la pinta)
 // y juega el resto de la mano con la heurística buena para cada carta posible
-const coClone = G => { const { log, feed, ...r } = G; const c = JSON.parse(JSON.stringify(r)); c.log = []; c.feed = []; return c; };
+const coClone = G => { const { log, feed, rec, prevRec, ...r } = G; const c = JSON.parse(JSON.stringify(r)); c.log = []; c.feed = []; return c; };
 function coDeterminize(G, p) {
   const d = coClone(G), unseen = coUnseen(G, p);
   // cartas cuyo dueño se sabe: la pinta robada y los cantes enseñados
@@ -1297,11 +1331,13 @@ function cardHTML(c, cls = '') {
   return `<div class="card ${cls}" role="img" aria-label="${lbl}">${cardSVG(c)}</div>`;
 }
 
+// modo pruebas: cartas de los bots boca arriba en formato compacto
+const chipsHTML = (hand, trump) => `<div class="chips">${hand.slice().sort((a, b) => a.s - b.s || a.r - b.r).map(c => `<span class="chip s${c.s}${c.s === trump ? ' tr' : ''}">${RV[c.r]}<i>${'OCEB'[c.s]}</i></span>`).join('')}</div>`;
 function renderSeat(p) {
   if (isCoto()) return;
   const el = $('seat' + p); if (!el) return;
   const n = dealView ? dealView.n[p] : S.hands[p].length - (fx && fx.p === p ? 1 : 0);
-  const backs = Array.from({ length: n }, () => '<span class="back"></span>').join('');
+  const backs = SETTINGS.showAll && !dealView ? chipsHTML(S.hands[p].filter(c => !(fx && fx.p === p && fx.card && fx.card.id === c.id)), -1) : Array.from({ length: n }, () => '<span class="back"></span>').join('');
   el.className = 'seat ' + (p === 2 ? 'top' : 'side') + ((S.phase === 'play' || S.phase === 'nit') && S.turn === p ? ' turn' : '');
   const dealer = S.dealer === p ? `<span class="dealer">${L('Reparte', 'Reparteix')}</span>` : '';
   const role = p === 2 ? L('Compañera', 'Companya') : 'Rival';
@@ -1398,6 +1434,7 @@ function renderScore(i) {
 }
 
 function render() {
+  const bl = $('btnLast'); if (bl) { bl.hidden = !(isCoto() && G && G.lastTrick); bl.textContent = L('Última baza', 'Última basa'); }
   if (isCoto() && G) return renderCoto();
   $('hand').classList.remove('co-hand');
   document.body.classList.toggle('deck-clasica', SETTINGS.deck === 'clasica');
@@ -1618,8 +1655,55 @@ function showRules(tab) {
 }
 
 function showLog() {
-  const items = (isCoto() ? G : S).log.slice(-150).reverse().map(l => `<li class="${l.k === 'hand' ? 'hand' : ''}">${l.txt}</li>`).join('');
-  showPanel(`<h2>Historial</h2><ul class="log">${items}</ul><div class="acts"><button class="btn primary" type="button" data-act="close">${L('Cerrar', 'Tancar')}</button></div>`);
+  const X = isCoto() ? G : S;
+  const items = X.log.slice(-150).reverse().map(l => `<li class="${l.k === 'hand' ? 'hand' : ''}">${l.txt}</li>`).join('');
+  const prev = X.prevRec ? `<button class="btn" type="button" data-act="expPrev">${L('Copiar la mano anterior', "Copiar la mà anterior")}</button>` : '';
+  showPanel(`<h2>Historial</h2><div class="acts" style="margin:0 0 8px"><button class="btn" type="button" data-act="exp">${L('Copiar esta mano para analizar', 'Copiar esta mà per a analitzar')}</button>${prev}</div><div id="expbox"></div><ul class="log">${items}</ul><div class="acts"><button class="btn primary" type="button" data-act="close">${L('Cerrar', 'Tancar')}</button></div>`);
+}
+const lvlName = v => ({ facil: 'fácil', normal: 'normal', dificil: 'difícil', experto: 'muy difícil' })[v] || v;
+const strip = t => String(t).replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
+function exportText(rec) {
+  if (!rec) return '';
+  const who = `Asientos: Tú, D=${NAMES[1]} (rival derecha), C=${NAMES[2]} (compañera), I=${NAMES[3]} (rival izquierda). Niveles: compañera ${lvlName(rec.levels[0])}, rivales ${lvlName(rec.levels[1])}.`;
+  const out = [];
+  if (rec.game === 'coto') {
+    out.push(`COTO · partida ${rec.partidaNo} · ${rec.vueltas ? 'MANO DE VUELTAS' : 'primera mano (no es de vueltas)'} · mano nº ${rec.handNo}`);
+    out.push(`Coto al mejor de ${rec.bestOf}: nosotros ${rec.wins[0]} - ellos ${rec.wins[1]} partidas`);
+    out.push(`Marcador al empezar la mano: nosotros ${rec.score[0]} - ellos ${rec.score[1]} (se sale a 101${rec.vueltas ? ', se cuenta en cuanto se llega' : ''})`);
+    out.push(`Reparte: ${SEATC[rec.dealer]} · Pinta: ${rec.pinta} (triunfo ${SUITN[rec.trump]})`);
+    out.push(who, 'Cartas: número + palo (o oros, c copas, e espadas, b bastos). 10 sota, 11 caballo, 12 rey.', '', 'Manos iniciales:');
+    rec.hands.forEach((h, q) => out.push(`  ${SEATC[q]}: ${h.join(' ')}`));
+    out.push('', ...rec.ev);
+    const G2 = isCoto() ? G : null;
+    if (G2 && G2.rec === rec && G2.trick.length) out.push(rec.cur + ' … (baza en juego)');
+  } else {
+    out.push(`CAU · mano ${rec.handNo} · reparte ${SEATC[rec.dealer]}${rec.socarrat ? ' · sóc socarrat' : ''}`);
+    out.push(`Marcador al empezar la mano: nosotros ${rec.score[0]} - ellos ${rec.score[1]} (malas/buenas: 20+20, se gana a 40)`);
+    out.push(who, 'Cartas: número + palo (o oros, c copas, e espadas, b bastos). 10 sota, 11 caballo, 12 rey.');
+    for (const d of rec.deals) {
+      out.push('', `Reparto ${d.round} (marcador ${d.score[0]}-${d.score[1]}):`);
+      if (d.table && d.table.length) out.push(`  Mesa: ${d.table.join(' ')}`);
+      if (d.pixat && d.pixat.length) out.push(`  Pixat (apartadas): ${d.pixat.join(' ')}`);
+      d.hands.forEach((h, q) => out.push(`  ${SEATC[q]}: ${h.join(' ')}`));
+    }
+    out.push('', 'Jugadas:', ...rec.lines.map(l => '  ' + strip(l)));
+  }
+  return out.join('\n');
+}
+async function doExport(prev) {
+  const X = isCoto() ? G : S, rec = prev ? X.prevRec : X.rec;
+  const txt = exportText(rec);
+  const box = $('expbox'); if (!box) return;
+  let ok = false;
+  try { await navigator.clipboard.writeText(txt); ok = true; } catch (e) {}
+  box.innerHTML = `<p class="desc">${ok ? L('Copiado. Pégalo en el chat.', 'Copiat. Apega-ho en el xat.') : L('Mantén pulsado el texto para copiarlo.', 'Mantín polsat el text per a copiar-lo.')}</p><textarea class="exp" readonly>${esc(txt)}</textarea>`;
+  const ta = box.querySelector('textarea'); if (!ok && ta) { ta.focus(); ta.select(); }
+}
+function showLastTrick() {
+  if (!isCoto() || !G.lastTrick) return;
+  const t = G.lastTrick, POS = [[50, 78], [82, 50], [50, 22], [18, 50]];
+  const cards = t.cards.map((x, k) => { const [l, tp] = POS[x.p]; return `<div class="ls ${x.p === t.winner ? 'win' : ''}" style="left:${l}%;top:${tp}%;animation-delay:${k * 0.12}s">${cardHTML(x.c)}<small>${k + 1}. ${NAMES[x.p]}</small></div>`; }).join('');
+  showPanel(`<h2>${L('Última baza', 'Última basa')}</h2><div class="lastfelt">${cards}</div><p class="lastinfo">${L(`Se la lleva ${NAMES[t.winner]}: ${t.pts} puntos`, `Se l'emporta ${NAMES[t.winner]}: ${t.pts} punts`)}${t.last ? L(' (con las 10 de últimas)', ' (amb les 10 d’últimes)') : ''}</p><div class="acts"><button class="btn primary" type="button" data-act="close">${L('Cerrar', 'Tancar')}</button></div>`);
 }
 
 let hasSaved = false, panelBack = null;
@@ -1647,6 +1731,7 @@ function showSettings() {
   <div class="opt"><label>${L('Etiquetas bajo el nombre', 'Etiquetes davall del nom')}</label>${seg('labels', off, SETTINGS.labels, true)}<span class="desc">${L('Recuerdan la última jugada de cada uno (Bac, Limpia, Captura 2…). El «De nit» se ve siempre.', "Recorden l'última jugada de cadascú (Bac, Limpia, Arreplega 2…). El «De nit» es veu sempre.")}</span></div>
   <div class="opt"><label>Sóc socarrat</label>${seg('socarrat', [[false,'No'],[true,'Sí']], SETTINGS.socarrat, true)}<span class="desc">${L("A la manera de Cocentaina: cada vez que s'ha pixat al repartir, la pareja que no reparte se apunta un punto.", "A la manera de Cocentaina: cada vegada que s'ha pixat en repartir, la parella que no reparteix s'apunta un punt.")}</span></div>
   <div class="opt"><label>${L('Baraja', 'Baralla')}</label>${seg('deck', [['moderna','Moderna'],['clasica', L('Clásica', 'Clàssica')]], SETTINGS.deck, true)}<span class="desc">${L('La clásica es la baraja libre «Naipes Libres».', 'La clàssica és la baralla lliure «Naipes Libres».')}</span></div>
+  <div class="opt"><label>${L('Ver todas las cartas (pruebas)', 'Vore totes les cartes (proves)')}</label>${seg('showAll', off, !!SETTINGS.showAll, true)}<span class="desc">${L('Para estudiar a los bots: enseña las cartas de tu compañera y de los rivales.', 'Per a estudiar els bots: mostra les cartes de la teua companya i dels rivals.')}</span></div>
   <div class="opt"><label>${L('Ritmo', 'Ritme')}</label>${seg('speed', [[0, L('Lento', 'Lent')], [1, 'Normal'], [2, L('Rápido', 'Ràpid')]], speedIx)}</div>
   <div class="acts"><button class="btn primary" type="button" data-act="back">${L('Volver', 'Tornar')}</button></div>`);
 }
@@ -1704,7 +1789,7 @@ $('panel').addEventListener('click', e => {
   const sb = e.target.closest('[data-set]');
   if (sb) {
     const k = sb.dataset.set, v = sb.dataset.val;
-    if (k === 'hints' || k === 'labels' || k === 'socarrat') SETTINGS[k] = v === 'true';
+    if (k === 'hints' || k === 'labels' || k === 'socarrat' || k === 'showAll') SETTINGS[k] = v === 'true';
     else if (k === 'speed') speedIx = +v;
     else if (k === 'cotoBest') SETTINGS.cotoBest = +v;
     else SETTINGS[k] = v;
@@ -1713,6 +1798,7 @@ $('panel').addEventListener('click', e => {
   }
   const b = e.target.closest('[data-act]'); if (!b) return;
   const a = b.dataset.act;
+  if (a === 'exp' || a === 'expPrev') return doExport(a === 'expPrev');
   if (a === 'close') { if (panelBack === 'menu') showMenu(); else closePanel(); }
   if (a === 'newgame') startGame('cau');
   if (a === 'continue') { closePanel(); render(); if (APP.mode === 'cotocau' && APP.M.stage === 'draw') return showDraw(); loop(); }
@@ -1749,6 +1835,7 @@ $('panel').addEventListener('change', e => {
 });
 $('btnRules').addEventListener('click', () => { panelBack = null; showRules(); });
 $('btnLog').addEventListener('click', () => { panelBack = null; showLog(); });
+$('btnLast').addEventListener('click', () => { panelBack = null; showLastTrick(); });
 $('btnMenu').addEventListener('click', showMenu);
 
 /* ---------------- Coto y CotoCau: interfaz ---------------- */
@@ -1776,7 +1863,7 @@ function coRenderSeat(p) {
   const el = $('seat' + p); if (!el) return;
   const n = coDealView ? coDealView.n[p] : G.hands[p].filter(c => !coHide.has(c.id)).length;
   // al acabar la partida a mitad de mano se destapan las cartas que le quedaban a cada uno
-  const backs = coReveal && G.hands[p].length ? `<div class="co-reveal">${G.hands[p].map(c => cardHTML(c)).join('')}</div>` : Array.from({ length: n }, () => '<span class="back"></span>').join('');
+  const backs = coReveal && G.hands[p].length ? `<div class="co-reveal">${G.hands[p].map(c => cardHTML(c)).join('')}</div>` : SETTINGS.showAll && !coDealView ? chipsHTML(G.hands[p].filter(c => !coHide.has(c.id)), G.trump) : Array.from({ length: n }, () => '<span class="back"></span>').join('');
   el.className = 'seat ' + (p === 2 ? 'top' : 'side') + ' co' + (G.phase === 'play' && G.turn === p && !coDealView ? ' turn' : '');
   const dealer = G.dealer === p ? `<span class="dealer">${L('Reparte', 'Reparteix')}</span>` : '';
   el.innerHTML = `<div class="av ${team(p) === 0 ? 'us' : ''}">${NAMES[p][0]}</div><div class="who"><span class="nm">${NAMES[p]}</span><span class="sub">${p === 2 ? L('Compañera', 'Companya') : 'Rival'}</span>${dealer}</div><div class="backs">${backs}</div><div class="bubble"></div>`;
@@ -2048,7 +2135,7 @@ function showPassword(target, wrong) {
   setTimeout(() => { const i = $('pw'); if (i) i.focus(); }, 50);
 }
 
-window.CAU = { APP, cotoNewMatch, coSwap, coCanSwap, coBotChoose, coPlay, coLegal, get G() { return G; }, set G(v) { G = v; }, set S(v) { S = v; }, render, matchNext, newGame, newHand, applyPlay, afterPlay, INFER, SMART, holdProb, determinize, botChoose, botChooseHard, botChooseNormal, botChooseEasy, botChooseDificil, botChooseExperto, botBet, botSing, SETTINGS, betAct, betOptions, sing, startSing, resolveNit, canFirst, canSecond, cardSVG, get S() { return S; } };
+window.CAU = { APP, cotoNewMatch, coNext, exportText, coSwap, coCanSwap, coBotChoose, coPlay, coLegal, get G() { return G; }, set G(v) { G = v; }, set S(v) { S = v; }, render, matchNext, newGame, newHand, applyPlay, afterPlay, INFER, SMART, holdProb, determinize, botChoose, botChooseHard, botChooseNormal, botChooseEasy, botChooseDificil, botChooseExperto, botBet, botSing, SETTINGS, betAct, betOptions, sing, startSing, resolveNit, canFirst, canSecond, cardSVG, get S() { return S; } };
 
 function start(data) {
   if (data && data.app) { Object.assign(APP, data.app); S = data.S; G = data.G; if (S) S.feed = []; if (G) G.feed = []; hasSaved = true; render(); loop(); return; }
