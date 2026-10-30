@@ -1180,7 +1180,7 @@ function coDeterminize(G, p) {
   return null;
 }
 function coRolloutValue(d, t) { return (d.pts[t] + d.cantes[t]) - (d.pts[1 - t] + d.cantes[1 - t]); }
-const CO_EXP = { trumpPen: 5, briscaPen: 0 };
+const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12 };
 function coBotExpert(G, p, N = 40) {
   const legal = coLegal(G, p); if (legal.length === 1) return legal[0].id;
   const t = team(p), tot = {}; legal.forEach(c => tot[c.id] = 0); let n = 0;
@@ -1200,7 +1200,8 @@ function coBotExpert(G, p, N = 40) {
   }
   if (!n) return coBotBest(G, p);
   // en la primera fase, los triunfos se guardan para el arrastre (penalización medida con miles de manos)
-  const pen = c => coArrastre(G) ? 0 : (c.s === G.trump ? CO_EXP.trumpPen + CSTR[c.r] * CO_EXP.trumpPen / 10 : 0);
+  // y no se sale de triunfo antes del arrastre: el as y el tres de triunfo valen mucho más allí
+  const pen = c => coArrastre(G) || c.s !== G.trump ? 0 : CO_EXP.trumpPen + CSTR[c.r] * CO_EXP.trumpPen / 10 + (G.trick.length ? 0 : CO_EXP.leadPen + (CSTR[c.r] >= 8 ? CO_EXP.leadPen : 0));
   let best = null, bv = -1e9; for (const c of legal) { const v = tot[c.id] / n - pen(c) + Math.random() * 1e-3; if (v > bv) { bv = v; best = c.id; } }
   return best;
 }
