@@ -637,11 +637,19 @@ function botChooseEasy(S, p) {
   return best;
 }
 const INFER = { on: true };
-const SMART = { on: true, opp2: 1, soft: 0.75, K: 40, sample: false, no: true, boost: 0.6 };
+// ¿Se sabe que q no tiene pareja en este reparto? Quien tiene pareja la canta (los bots siempre);
+// si q ya ha tenido ocasión de cantar y no lo ha hecho, no la tiene. Contigo (q = 0) se aplica 9 de cada 10 veces,
+// porque tú puedes elegir no cantar.
+function noPairConf(S, q) {
+  if (!SMART.np || !S.inf || !S.sung || S.sung[q]) return 0;
+  const could = S.round === 3 ? S.phase !== 'singLast' : (S.nitState !== 'open' || S.first[q]);
+  return could ? (q === 0 ? 0.9 : 1) : 0;
+}
+const SMART = { on: true, opp2: 1, soft: 0.75, K: 60, sample: false, no: true, boost: 0.6, r3: true, np: true, keep: 2 };
 // Reparte al azar las cartas que el bot no ve, pero respetando lo que se ha visto en la mesa:
 // quien ha cantado de nit tiene pareja (o rondín), quien no ha hecho bac pudiendo no tenía ese número,
 // y quien no ha capturado pudiendo, probablemente tampoco (se respeta 3 de cada 4 veces).
-function determinize(S, p) {
+function determinize(S, p, opts = {}) {
   const d = cloneLite(S);
   const aside = S.round === 1 && S.asideIds && INFER.on ? ALL.filter(c => S.asideIds.includes(c.id) && !S.public.includes(c.id)) : [];
   const unk = unknownFor(S, p);
@@ -651,10 +659,12 @@ function determinize(S, p) {
     for (let tries = 0; tries < 40; tries++) {
       const pool = shuffle(unk.map(c => ({ ...c }))); let ok = true; const hands = {};
       for (const q of shuffle(others.slice())) {
-        const n = S.hands[q].length, soft = I.soft[q].filter(() => Math.random() < SMART.soft), h = [];
+        const n = S.hands[q].length, soft = I.soft[q].filter(() => Math.random() < (opts.soft ?? SMART.soft)), h = [];
+        const np = Math.random() < noPairConf(S, q);
         for (let i = 0; i < pool.length && h.length < n;) {
           const c = pool[i];
           if (I.no[q].includes(c.r) || soft.includes(c.r)) { i++; continue; }
+          if (np && (h.some(x => x.r === c.r) || I.played[q].some(x => x.r === c.r))) { i++; continue; }
           h.push(c); pool.splice(i, 1);
         }
         if (h.length < n) { ok = false; break; }
@@ -710,23 +720,39 @@ const LEVELDESC = () => L('Fácil: mira solo lo que gana en el momento y se equi
 const ptsValue = (S, t) => 0.5 * (S.cap[t] - S.cap[1 - t]) + (bonSum(S.bon[t]) - bonSum(S.bon[1 - t]));
 // Probabilidad de que cada jugador tenga cada número, sacada de repartos imaginados que respetan lo visto
 // (quién ha cantado de nit, quién no ha hecho bac pudiendo…). ph[q][r] entre 0 y 1.
-function holdProb(S, p, K = 40) {
+function holdProb(S, p, K = 40, opts) {
   const ph = [0,1,2,3].map(() => new Array(10).fill(0));
   for (let k = 0; k < K; k++) {
-    const d = determinize(S, p);
+    const d = determinize(S, p, opts);
     for (let q = 0; q < 4; q++) { if (q === p) continue; const seen = new Set(d.hands[q].map(c => c.r)); seen.forEach(r => ph[q][r] += 1 / K); }
   }
   return ph;
 }
+// Jugada típica del que reparte en el último reparto: juega el último, así que una carta cuyo número
+// tiene un número impar de copias ocultas (1 o 3) y no está en la mesa acabará capturando seguro
+// (por ejemplo el 1, que solo sale de dos en dos), y con ella se lleva lo que quede en la mesa.
+function isKeeper(S, p, c) {
+  if (S.round !== 3 || S.deck.length || p !== S.dealer) return false;
+  if (S.table.some(x => x.r === c.r) || (S.chain && S.chain.r === c.r)) return false;
+  const k = unknownFor(S, p).filter(x => x.r === c.r).length;
+  return k % 2 === 1;
+}
 function evalPlayPts(S, p, cid, ph) {
   const sim = cloneLite(S), t = team(p);
-  const before = ptsValue(S, t); applyPlay(sim, p, cid); const gain = ptsValue(sim, t) - before;
+  const before = ptsValue(S, t); applyPlay(sim, p, cid); let gain = ptsValue(sim, t) - before;
+  if (SMART.keep && S.hands[p].length > 1) {
+    const c = S.hands[p].find(x => x.id === cid);
+    if (isKeeper(S, p, c) && sim.table.some(x => x.id === cid)) gain -= SMART.keep;   // gastarla dejándola en la mesa
+  }
   const q = (p + 1) % 4, h = sim.hands[q].length; if (!h) return gain;
   const unk = unknownFor(sim, p), U = unk.length;
   const cnt = r => unk.filter(c => c.r === r).length;
   const I = SMART.on ? S.inf : null;
   // siguiente jugador: probabilidad uniforme, salvo que ya haya demostrado no tener ese número (no hizo bac pudiendo)
-  const P = ph ? (r => ph[q][r]) : (r => I && SMART.no && I.no[q].includes(r) ? 0 : probHas(U, cnt(r), h));
+  // último reparto sin mazo y nadie con pareja (nadie ha cantado): cada uno tiene como mucho una carta de cada número,
+  // así que si quedan k ocultas de un número, cada rival tiene una con probabilidad k/3 (con los cuatro reyes fuera, seguro)
+  const allNoPair = SMART.r3 && I && S.round === 3 && !S.deck.length && [0,1,2,3].every(x => x === p || noPairConf(S, x) > 0);
+  const P = ph ? (r => ph[q][r]) : (r => I && SMART.no && I.no[q].includes(r) ? 0 : allNoPair ? Math.min(1, cnt(r) / 3) : probHas(U, cnt(r), h));
   // el rival de después de mi compañero: si ha cantado de nit y ha jugado un número en este reparto, seguramente le queda otro igual
   const q3 = (p + 3) % 4, h3 = sim.hands[q3].length;
   const P3 = r => { if (!h3) return 0; const base = probHas(U, cnt(r), h3);
@@ -749,7 +775,9 @@ function evalPlayPts(S, p, cid, ph) {
 }
 
 function botChooseDificil(S, p, fast) {
-  const ph = !fast && SMART.on && SMART.sample && S.inf ? holdProb(S, p, SMART.K) : null;
+  // en el último reparto no queda mazo: todo lo oculto está en las manos y se puede deducir mucho
+  // (si nadie ha cantado y faltan los cuatro reyes, cada uno tiene uno)
+  const ph = !fast && SMART.on && S.inf && SMART.sample ? holdProb(S, p, SMART.K, { soft: 0 }) : null;
   let best = null, bv = -1e9;
   for (const c of S.hands[p]) { const v = evalPlayPts(S, p, c.id, ph) + Math.random() * 0.01; if (v > bv) { bv = v; best = c.id; } }
   return best;
