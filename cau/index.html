@@ -1267,7 +1267,9 @@ function coSolveArr(hands, trick, turn, tr, opt) {
     const g = (T === 0 ? pts : -pts) + (T === 0 ? -cant[1] : cant[0]);
     sc[T] += pts; sc[1 - T] += cant[1 - T];
     const saved = t.splice(0, 4);
-    if (vu && sc[T] >= 101) v = g + (T === 0 ? 1000 : -1000);
+    if (!vu && left === 0 && (sc[0] > 100 || sc[1] > 100)) {   // primera mano: si las dos pasan de 100, gana la de las 10 de últimas
+      const w = sc[0] > 100 && sc[1] > 100 ? T : (sc[0] > 100 ? 0 : 1); v = g + (w === 0 ? 1000 : -1000);
+    } else if (vu && sc[T] >= 101) v = g + (T === 0 ? 1000 : -1000);
     else if (vu && sc[1 - T] >= 101) v = g + (T === 0 ? -1000 : 1000);
     else v = g + rec(t, w.p, a - g, b - g);
     t.push(...saved); sc[T] -= pts; sc[1 - T] -= cant[1 - T]; hw[T] = hw0; for (const s of ns) sung.splice(sung.indexOf(s), 1);
@@ -1418,7 +1420,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-10-30-21';
+const APP_VER = 'cau-2026-10-30-22';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
