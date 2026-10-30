@@ -182,10 +182,11 @@ button{font:inherit;color:inherit}
 .co-trump{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:12px;color:var(--ink-soft);background:rgba(0,0,0,.25);padding:3px 9px;border-radius:999px}
 .co-trump b{color:var(--gold)}
 .hand.co-hand{gap:4px;flex-wrap:nowrap}
-.co-reveal{display:flex;--cw:30px}
-.co-reveal .card+.card{margin-left:-12px}
+.co-reveal{display:flex}
+.co-reveal .card{--cw:40px}
+.co-reveal .card+.card{margin-left:-10px}
 .seat.side .co-reveal{flex-direction:column;align-items:center}
-.seat.side .co-reveal .card+.card{margin-left:0;margin-top:-26px}
+.seat.side .co-reveal .card+.card{margin-left:0;margin-top:-34px}
 .hand.co-hand .hc .card{--cw:clamp(46px,14.5vw,80px)}
 .seat.co .back+.back{margin-left:-20px}
 .seat.side.co .back+.back{margin-left:0;margin-top:-46px}
@@ -1229,7 +1230,7 @@ function coDeterminize(G, p) {
   return null;
 }
 function coRolloutValue(d, t) { return (d.pts[t] + d.cantes[t]) - (d.pts[1 - t] + d.cantes[1 - t]); }
-const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12, noLead: true, winW: 60, vueltasScale: 0.2 };
+const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12, noLead: true, minTrumpPts: 10, winW: 60, vueltasScale: 0.2 };
 // Muy difícil. El metajuego cambia según el momento:
 // · mano normal, con montón: se guardan los triunfos para el arrastre y nunca se sale de triunfo;
 // · arrastre: se puede salir de triunfo para quitar los de los rivales;
@@ -1241,6 +1242,14 @@ function coBotExpert(G, p, N = 40) {
   if (lead && !arr && !G.vueltas && CO_EXP.noLead) {
     const nt = legal.filter(c => c.s !== G.trump);
     if (nt.length) legal = nt;              // con montón y en la primera mano, no se sale de triunfo
+    if (legal.length === 1) return legal[0].id;
+  }
+  // primera mano, con montón: no fallar una baza con pocos puntos, salvo que tenga un cante (rey y sota) por cantar
+  if (!lead && !arr && !G.vueltas && CO_EXP.minTrumpPts) {
+    const T = G.trick.reduce((a, x) => a + CPTS[x.c.r], 0);
+    const cante = [0, 1, 2, 3].some(s => !G.sung.includes(s) && G.hands[p].some(c => c.s === s && c.r === C_REY) && G.hands[p].some(c => c.s === s && c.r === C_SOTA));
+    const nt = legal.filter(c => c.s !== G.trump);
+    if (T < CO_EXP.minTrumpPts && !cante && nt.length) legal = nt;
     if (legal.length === 1) return legal[0].id;
   }
   const tot = {}; legal.forEach(c => tot[c.id] = 0); let n = 0;
@@ -1337,7 +1346,7 @@ function renderSeat(p) {
   if (isCoto()) return;
   const el = $('seat' + p); if (!el) return;
   const n = dealView ? dealView.n[p] : S.hands[p].length - (fx && fx.p === p ? 1 : 0);
-  const backs = SETTINGS.showAll && !dealView ? chipsHTML(S.hands[p].filter(c => !(fx && fx.p === p && fx.card && fx.card.id === c.id)), -1) : Array.from({ length: n }, () => '<span class="back"></span>').join('');
+  const backs = SETTINGS.showAll && !dealView ? `<div class="co-reveal">${S.hands[p].filter(c => !(fx && fx.p === p && fx.card && fx.card.id === c.id)).map(c => cardHTML(c)).join('')}</div>` : Array.from({ length: n }, () => '<span class="back"></span>').join('');
   el.className = 'seat ' + (p === 2 ? 'top' : 'side') + ((S.phase === 'play' || S.phase === 'nit') && S.turn === p ? ' turn' : '');
   const dealer = S.dealer === p ? `<span class="dealer">${L('Reparte', 'Reparteix')}</span>` : '';
   const role = p === 2 ? L('Compañera', 'Companya') : 'Rival';
@@ -1863,7 +1872,7 @@ function coRenderSeat(p) {
   const el = $('seat' + p); if (!el) return;
   const n = coDealView ? coDealView.n[p] : G.hands[p].filter(c => !coHide.has(c.id)).length;
   // al acabar la partida a mitad de mano se destapan las cartas que le quedaban a cada uno
-  const backs = coReveal && G.hands[p].length ? `<div class="co-reveal">${G.hands[p].map(c => cardHTML(c)).join('')}</div>` : SETTINGS.showAll && !coDealView ? chipsHTML(G.hands[p].filter(c => !coHide.has(c.id)), G.trump) : Array.from({ length: n }, () => '<span class="back"></span>').join('');
+  const backs = coReveal && G.hands[p].length ? `<div class="co-reveal">${G.hands[p].map(c => cardHTML(c)).join('')}</div>` : SETTINGS.showAll && !coDealView ? `<div class="co-reveal">${G.hands[p].filter(c => !coHide.has(c.id)).map(c => cardHTML(c)).join('')}</div>` : Array.from({ length: n }, () => '<span class="back"></span>').join('');
   el.className = 'seat ' + (p === 2 ? 'top' : 'side') + ' co' + (G.phase === 'play' && G.turn === p && !coDealView ? ' turn' : '');
   const dealer = G.dealer === p ? `<span class="dealer">${L('Reparte', 'Reparteix')}</span>` : '';
   el.innerHTML = `<div class="av ${team(p) === 0 ? 'us' : ''}">${NAMES[p][0]}</div><div class="who"><span class="nm">${NAMES[p]}</span><span class="sub">${p === 2 ? L('Compañera', 'Companya') : 'Rival'}</span>${dealer}</div><div class="backs">${backs}</div><div class="bubble"></div>`;
