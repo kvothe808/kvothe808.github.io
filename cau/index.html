@@ -916,12 +916,11 @@ function cotoNewHand(G) {
   G.handNo++; G.vueltas = G.handNo > 1;
   G.deck = shuffle(ALL.map(c => ({ ...c })));
   G.hands = [[], [], [], []];
-  // se reparten 3 y 3 empezando por la derecha de quien reparte; la siguiente es la pinta
+  // se reparte de una en una empezando por la derecha de quien reparte; al acabar se destapa la pinta
   G.dealSeq = [];
-  for (let k = 0; k < 2; k++) for (let i = 1; i <= 4; i++) {
-    const p = (G.dealer + i) % 4;
-    for (let j = 0; j < 3; j++) { const c = G.deck.pop(); G.hands[p].push(c); }
-    G.dealSeq.push({ to: p, n: 3 });
+  for (let k = 0; k < 6; k++) for (let i = 1; i <= 4; i++) {
+    const p = (G.dealer + i) % 4, c = G.deck.pop(); G.hands[p].push(c);
+    G.dealSeq.push({ to: p, n: 1 });
   }
   G.pinta = G.deck.pop(); G.trump = G.pinta.s;
   G.stock = G.deck.slice().reverse().concat([G.pinta]); G.deck = [];   // se roba por arriba; la pinta es la última
@@ -977,7 +976,7 @@ function coSing(G, p, s) {
   G.sung.push(s); G.cantes[t] += v; G.score[t] += v;
   for (const id of [s * 10 + C_REY, s * 10 + C_SOTA]) if (!G.revealed[p].includes(id)) G.revealed[p].push(id);
   const who = p === 0 ? L('Cantas', 'Cantes') : `${NAMES[p]} canta`;
-  coSay(G, v === 40 ? L(`${who} las 40.`, `${who} les 40.`) : L(`${who} las 20 en ${SUITN[s]}.`, `${who} les 20 en ${SUITN[s]}.`), 'cante');
+  coSay(G, v === 40 ? L(`${who} las 40.`, `${who} les 40.`) : L(`${who} 20 en ${SUITN[s]}.`, `${who} 20 en ${SUITN[s]}.`), 'cante');
   coCheckOut(G, t);
   return v;
 }
@@ -1136,7 +1135,7 @@ function coBotEasy(G, p) {
 }
 function coBotNormal(G, p) {
   const legal = coLegal(G, p);
-  if (legal.length > 1 && Math.random() < 0.15) { const best = coHeur(G, p, CO_NORMAL); const o = legal.filter(c => c.id !== best); return o[Math.floor(Math.random() * o.length)].id; }
+  if (legal.length > 1 && Math.random() < 0.15) { const best = coHeur(G, p, CO_NORMAL); let o = legal.filter(c => c.id !== best); const nt = o.filter(c => c.s !== G.trump || coArrastre(G)); if (nt.length) o = nt; return o[Math.floor(Math.random() * o.length)].id; }
   return coHeur(G, p, CO_NORMAL);
 }
 const coBotBest = (G, p) => coHeur(G, p, CO_BEST);
@@ -1174,6 +1173,7 @@ function coDeterminize(G, p) {
   return null;
 }
 function coRolloutValue(d, t) { return (d.pts[t] + d.cantes[t]) - (d.pts[1 - t] + d.cantes[1 - t]); }
+const CO_EXP = { trumpPen: 5, briscaPen: 0 };
 function coBotExpert(G, p, N = 40) {
   const legal = coLegal(G, p); if (legal.length === 1) return legal[0].id;
   const t = team(p), tot = {}; legal.forEach(c => tot[c.id] = 0); let n = 0;
@@ -1192,7 +1192,9 @@ function coBotExpert(G, p, N = 40) {
     }
   }
   if (!n) return coBotBest(G, p);
-  let best = null, bv = -1e9; for (const c of legal) { const v = tot[c.id] + Math.random() * 1e-3; if (v > bv) { bv = v; best = c.id; } }
+  // en la primera fase, los triunfos se guardan para el arrastre (penalización medida con miles de manos)
+  const pen = c => coArrastre(G) ? 0 : (c.s === G.trump ? CO_EXP.trumpPen + CSTR[c.r] * CO_EXP.trumpPen / 10 : 0);
+  let best = null, bv = -1e9; for (const c of legal) { const v = tot[c.id] / n - pen(c) + Math.random() * 1e-3; if (v > bv) { bv = v; best = c.id; } }
   return best;
 }
 function coBotChoose(G, p, lvl) {
@@ -1760,7 +1762,7 @@ function coRenderBottom() {
   if (coDealView) { el.innerHTML = `<div class="status"><span>${L('Reparte', 'Reparteix')} <b>${NAMES[G.dealer]}</b>…</span></div>`; return; }
   let btns = '';
   if (!busy && G.phase === 'play') {
-    for (const s of coCantesFor(G, 0)) btns += `<button class="btn sing" type="button" data-co="sing" data-s="${s}">${s === G.trump ? L('Cantar las 40', 'Cantar les 40') : L(`Cantar las 20 en ${SUITN[s]}`, `Cantar les 20 en ${SUITN[s]}`)}</button>`;
+    for (const s of coCantesFor(G, 0)) btns += `<button class="btn sing" type="button" data-co="sing" data-s="${s}">${s === G.trump ? L('Cantar las 40', 'Cantar les 40') : `${L('Cantar', 'Cantar')} 20 en ${SUITN[s]}`}</button>`;
     if (btns && G.turn !== 0) btns += `<button class="btn" type="button" data-co="nosing">${L('No cantar', 'No cantar')}</button>`;
     if (coCanSwap(G, 0)) btns += `<button class="btn primary" type="button" data-co="swap">${L('Cambiar el 7', 'Canviar el 7')}</button>`;
   }
@@ -1773,7 +1775,7 @@ async function coDrain() {
   const items = G.feed.splice(0);
   for (const i of items) {
     const who = /^(Cantas|Cantes|Cambias|Canvies)/.test(i.txt) ? NAMES[0] : i.txt.split(' ')[0];
-    if (i.k === 'cante') { narr = i.txt; render(); await callout(/40/.test(i.txt) ? L('Las 40', 'Les 40') : L('Las 20', 'Les 20'), who); }
+    if (i.k === 'cante') { narr = i.txt; render(); await callout(/40/.test(i.txt) ? L('Las 40', 'Les 40') : '20 en ' + (i.txt.match(/20 en (\S+?)\./) || [, ''])[1], who); }
     else if (i.k === 'swap') { narr = i.txt; render(); await callout(L('Cambia el 7', 'Canvia el 7'), who); }
     else if (i.k === 'pts') { narr = i.txt; render(); await sleep(1300); }
   }
@@ -1821,7 +1823,7 @@ async function animateCotoDeal() {
     if (reduce) return;
     const f = document.createElement('div'); f.className = 'fly'; f.innerHTML = '<span class="back"></span>'.repeat(n); document.body.appendChild(f);
     const w = f.offsetWidth / 2, h = f.offsetHeight / 2;
-    const a = f.animate([{ transform: `translate(${ox - w}px,${oy - h}px) scale(.75)` }, { transform: `translate(${to[0] - w}px,${to[1] - h}px) scale(1)` }], { duration: 300 * SPEEDS[speedIx][1], easing: 'cubic-bezier(.3,.7,.3,1)' });
+    const a = f.animate([{ transform: `translate(${ox - w}px,${oy - h}px) scale(.75)` }, { transform: `translate(${to[0] - w}px,${to[1] - h}px) scale(1)` }], { duration: 150 * SPEEDS[speedIx][1], easing: 'cubic-bezier(.3,.7,.3,1)' });
     await a.finished.catch(() => {}); f.remove();
   };
   for (const st of G.dealSeq) {
@@ -1830,6 +1832,7 @@ async function animateCotoDeal() {
     coDealView.n[p] += st.n; p === 0 ? coRenderHand() : coRenderSeat(p);
   }
   const tb = $('table').getBoundingClientRect();
+  // se destapa la pinta
   await fly([tb.left + tb.width * 0.16, tb.top + tb.height * 0.13], 1);
   coDealView.stock = true; coRenderTable();
   await sleep(500);
