@@ -1231,12 +1231,83 @@ function coDeterminize(G, p) {
   return null;
 }
 function coRolloutValue(d, t) { return (d.pts[t] + d.cantes[t]) - (d.pts[1 - t] + d.cantes[1 - t]); }
-const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12, noLead: true, minTrumpPts: 10, winW: 60, vueltasScale: 0.2 };
+const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12, noLead: true, minTrumpPts: 10, solve: 6, protect: true, winW: 60, vueltasScale: 0.2 };
 // Muy difícil. El metajuego cambia según el momento:
 // · mano normal, con montón: se guardan los triunfos para el arrastre y nunca se sale de triunfo;
 // · arrastre: se puede salir de triunfo para quitar los de los rivales;
 // · mano de vueltas: lo que cuenta es salirse antes que ellos (o que no se salgan), apoyando al compañero.
 // Además valora el marcador: ganar la partida en la mano simulada vale mucho más que unos puntos.
+// Solver alfa-beta del arrastre (doble mudo): valor = (puntos nuestros − suyos) en lo que queda, con cantes.
+// En la mano de vueltas, salirse (llegar a 101) vale ±1000.
+function coSolveArr(hands, trick, turn, tr, opt) {
+  const beats = (a, b) => a.s === b.s ? CSTR[a.r] > CSTR[b.r] : a.s === tr;
+  const H = hands.map(h => h.slice());
+  const sung = (opt && opt.sung || []).slice(), vu = opt && opt.vueltas, sc = opt && opt.score ? opt.score.slice() : [0, 0];
+  let left = H.reduce((a, h) => a + h.length, 0);
+  function legal(h, t, p) {
+    if (!t.length) return h;
+    const lead = t[0].c.s; let w = t[0]; for (let i = 1; i < t.length; i++) if (beats(t[i].c, w.c)) w = t[i];
+    const partner = (w.p & 1) === (p & 1);
+    const same = h.filter(c => c.s === lead);
+    if (same.length) { if (partner) return same; const b = same.filter(c => beats(c, w.c)); return b.length ? b : same; }
+    if (partner) return h; const trs = h.filter(c => c.s === tr); if (!trs.length) return h;
+    const o = trs.filter(c => beats(c, w.c)); if (o.length) return o; return w.c.s === tr ? h : trs;
+  }
+  function complete(t, a, b) {
+    let v;
+    let w = t[0]; for (let k = 1; k < 4; k++) if (beats(t[k].c, w.c)) w = t[k];
+    const T = w.p & 1;
+    let pts = CPTS[t[0].c.r] + CPTS[t[1].c.r] + CPTS[t[2].c.r] + CPTS[t[3].c.r]; if (left === 0) pts += 10;
+    const ns = [];
+    if (left > 0) for (const q of [T, T + 2]) for (let s = 0; s < 4; s++) if (!sung.includes(s) && H[q].some(x => x.s === s && x.r === C_REY) && H[q].some(x => x.s === s && x.r === C_SOTA)) { sung.push(s); ns.push(s); pts += s === tr ? 40 : 20; }
+    const g = T === 0 ? pts : -pts;
+    sc[T] += pts;
+    const saved = t.splice(0, 4);
+    if (vu && sc[T] >= 101) v = g + (T === 0 ? 1000 : -1000);
+    else v = g + rec(t, w.p, a - g, b - g);
+    t.push(...saved); sc[T] -= pts; for (const s of ns) sung.splice(sung.indexOf(s), 1);
+    return v;
+  }
+  const ord = c => CPTS[c.r] * 2 + CSTR[c.r] + (c.s === tr ? 6 : 0);
+  // tabla de transposición en los inicios de baza (con cotas, por la poda alfa-beta)
+  const TT = new Map();
+  let mask = 0n; for (const h of H) for (const c of h) mask |= 1n << BigInt(c.id);
+  function rec(t, p, a, b) {
+    if (left === 0) return 0;
+    let key = null, a0 = a;
+    if (!t.length) {
+      key = mask.toString(36) + ':' + p + ':' + sung.join('') + (vu ? ':' + sc[0] + ',' + sc[1] : '');
+      const e = TT.get(key);
+      if (e && (e.f === 0 || (e.f === 1 && e.v >= b) || (e.f === 2 && e.v <= a))) return e.v;
+    }
+    const r = recInner(t, p, a, b);
+    if (key) TT.set(key, { v: r, f: r <= a0 ? 2 : r >= b ? 1 : 0 });
+    return r;
+  }
+  function recInner(t, p, a, b) {
+    const max = (p & 1) === 0;
+    const L = legal(H[p], t, p).slice().sort((x, y) => ord(y) - ord(x));
+    let best = max ? -1e9 : 1e9;
+    for (const c of L) {
+      const i = H[p].indexOf(c); H[p].splice(i, 1); left--; mask ^= 1n << BigInt(c.id); t.push({ p, c }); let v;
+      if (t.length === 4) v = complete(t, a, b);
+      else v = rec(t, (p + 1) & 3, a, b);
+      t.pop(); H[p].splice(i, 0, c); left++; mask ^= 1n << BigInt(c.id);
+      if (max) { if (v > best) best = v; if (best > a) a = best; } else { if (v < best) best = v; if (best < b) b = best; }
+      if (a >= b) break;
+    }
+    return best;
+  }
+  const t0 = trick.slice();
+  return t0.length === 4 ? complete(t0, -1e9, 1e9) : rec(t0, turn, -1e9, 1e9);
+}
+// Valor de jugar c (para el equipo de p, en puntos de diferencia) en un reparto conocido
+function coSolveOption(d, p, c) {
+  const H = d.hands.map(h => h.slice()); H[p] = H[p].filter(x => x.id !== c.id);
+  const v = coSolveArr(H, d.trick.concat([{ p, c }]), (p + 1) & 3, d.trump, { sung: d.sung, vueltas: d.vueltas, score: d.score });
+  return team(p) === 0 ? v : -v;
+}
+
 function coBotExpert(G, p, N = 40) {
   let legal = coLegal(G, p); if (legal.length === 1) return legal[0].id;
   const t = team(p), arr = coArrastre(G), lead = !G.trick.length;
@@ -1252,6 +1323,20 @@ function coBotExpert(G, p, N = 40) {
     const nt = legal.filter(c => c.s !== G.trump);
     if (T < CO_EXP.minTrumpPts && !cante && nt.length) legal = nt;
     if (legal.length === 1) return legal[0].id;
+  }
+  // al final del arrastre se calcula exacto (doble mudo) sobre cada reparto posible de las cartas ocultas
+  if (arr && CO_EXP.solve && (G.hands[p].length < CO_EXP.solve || (G.hands[p].length === CO_EXP.solve && G.trick.length))) {
+    const M = [0, 30, 30, 30, 30, 12, 8][G.hands[p].length], sum = {}; legal.forEach(c => sum[c.id] = 0); let m = 0;
+    for (let k = 0; k < M; k++) { const d = coDeterminize(G, p); if (!d) continue; m++; for (const c of legal) sum[c.id] += coSolveOption(d, p, c); }
+    if (m) { let best = null, bv = -1e9; for (const c of legal) { const v = sum[c.id] / m + Math.random() * 1e-3; if (v > bv) { bv = v; best = c.id; } } return best; }
+  }
+  // mano de vueltas, con montón: si gana mi compañero y aún juega un rival detrás, protejo la baza con el triunfo más bajo
+  if (G.vueltas && !arr && CO_EXP.protect && G.trick.length === 2) {
+    const w = coTrickWinner(G, G.trick);
+    if (team(w.p) === t && w.c.s !== G.trump) {
+      const low = legal.filter(c => c.s === G.trump && CSTR[c.r] < 6).sort((a, b) => CSTR[a.r] - CSTR[b.r]);
+      if (low.length) return low[0].id;
+    }
   }
   const tot = {}; legal.forEach(c => tot[c.id] = 0); let n = 0;
   for (let k = 0; k < N; k++) {
@@ -1328,7 +1413,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-10-30-13';
+const APP_VER = 'cau-2026-10-30-14';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
@@ -1547,6 +1632,8 @@ async function doPlay(p, cid) {
   if (sim.round !== roundBefore && sim.phase !== 'handEnd') sim.bubbles = sim.bubbles.map((b, i) => sim.sung && sim.sung[i] ? b : '');
   S = sim;
   if (S.round !== roundBefore && S.phase !== 'handEnd' && S.phase !== 'gameEnd') {
+    // las cartas nuevas no se ven hasta que llegan volando
+    dealView = { n: [0, 0, 0, 0], table: true, tableIds: new Set(), temp: null };
     render(); await drainFeed(true);
     narr = L(`Reparto ${S.round} de 3.`, `Repartiment ${S.round} de 3.`);
     await animateDeal(false);
@@ -2113,6 +2200,7 @@ function matchNext() {
   if (M.stage === 'coto') {
     M.res.coto = G.winner; M.stage = 'cau'; M.cur = 'cau';
     S = newGame(); S.feed = []; save();
+    dealView = { n: [0, 0, 0, 0], table: false, tableIds: new Set(), temp: null };   // que no se vea la mano del Cau antes de repartir
     showPanel(`<h2>${L('Coto acabado', 'Coto acabat')}</h2><p>${matchStatus()}</p><p>${L('Ahora se juega el Cau a 40.', 'Ara es juga el Cau a 40.')}</p><div class="acts"><button class="btn primary" type="button" data-act="match-go">${L('Empezar el Cau', 'Començar el Cau')}</button></div>`);
     return;
   }
