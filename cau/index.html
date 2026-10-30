@@ -1329,7 +1329,7 @@ function coBotExpert(G, p, N = 40) {
   if (arr && CO_EXP.solve && (G.hands[p].length < CO_EXP.solve || (G.hands[p].length === CO_EXP.solve && G.trick.length))) {
     const M = [0, 30, 30, 30, 30, 12, 8][G.hands[p].length], sum = {}; legal.forEach(c => sum[c.id] = 0); let m = 0;
     for (let k = 0; k < M; k++) { const d = coDeterminize(G, p); if (!d) continue; m++; for (const c of legal) sum[c.id] += coSolveOption(d, p, c); }
-    if (m) { let best = null, bv = -1e9; for (const c of legal) { const v = sum[c.id] / m + Math.random() * 1e-3; if (v > bv) { bv = v; best = c.id; } } return best; }
+    if (m) { let best = null, bv = -1e9; for (const c of legal) { const v = sum[c.id] / m - 0.01 * (CSTR[c.r] + (c.s === G.trump ? 10 : 0)) + Math.random() * 1e-4; if (v > bv) { bv = v; best = c.id; } } return best; }   // a igualdad, se guarda la carta fuerte
   }
   // mano de vueltas, con montón: si gana mi compañero y aún juega un rival detrás, protejo la baza con el triunfo más bajo
   if (G.vueltas && !arr && CO_EXP.protect && G.trick.length === 2) {
@@ -1414,7 +1414,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-10-30-19';
+const APP_VER = 'cau-2026-10-30-20';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
