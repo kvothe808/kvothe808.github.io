@@ -1028,7 +1028,13 @@ function coPlay(G, p, cid) {
   G.lastWinner = w.p; G.lastTrick = { cards: G.trick, winner: w.p, pts, last };
   G.trick = []; G.leader = w.p; G.turn = w.p; G.canSing = t;
   // robar: empieza el que gana la baza
-  G.lastDraw = [];
+  G.lastDraw = []; G.autoSwap = null;
+  // última baza con montón: si la gana tu pareja y tenéis el 7 de triunfo sin cambiar, se cambia solo,
+  // para que la pinta (un as, un tres…) no se la lleve el rival que roba el último
+  if (G.stock.length === 4 && !G.swapped && C_CAMBIABLE.includes(G.pinta.r)) {
+    const holder = [w.p, (w.p + 2) % 4].find(q => G.hands[q].some(c => c.s === G.trump && c.r === C_SIETE));
+    if (holder != null) { G.autoSwap = { p: holder, old: { ...G.pinta } }; coSwap(G, holder); }
+  }
   if (G.stock.length) for (let k = 0; k < 4; k++) {
     const q = (w.p + k) % 4, d = G.stock.shift(); G.lastDraw.push({ p: q, id: d.id });
     if (d.id === G.pinta.id) { G.pintaHolder = q; G.pintaHolderCard = d.id; }
@@ -1133,6 +1139,15 @@ function coHeur(G, p, P) {
   }
   return legal.reduce((a, c) => (CPTS[c.r] - CPTS[a.r] || (c.s === tr) - (a.s === tr) || CSTR[c.r] - CSTR[a.r]) < 0 ? c : a).id;
 }
+// Regla de oro de la primera fase (con montón): no se sale de triunfo y solo se falla si hay bastantes puntos.
+function coKeepTrumps(G, p, id, thr) {
+  if (coArrastre(G)) return id;
+  const c = G.hands[p].find(x => x.id === id); if (!c || c.s !== G.trump) return id;
+  const legal = coLegal(G, p), nt = legal.filter(x => x.s !== G.trump); if (!nt.length) return id;
+  const T = G.trick.reduce((a, x) => a + CPTS[x.c.r], 0);
+  if (G.trick.length && T >= (G.vueltas ? Math.min(thr, 4) : thr)) return id;
+  return nt.reduce((a, x) => coCostCard(G, x, G.hands[p]) < coCostCard(G, a, G.hands[p]) ? x : a).id;
+}
 const CO_NORMAL = { thrSuit: 4, thrTrump: 10, cargarBriscas: false, avoidLast: true, arrTrump: false };
 const CO_BEST = { thrSuit: 0, thrTrump: 10, cargarBriscas: true, avoidLast: true, arrTrump: false };
 function coBotEasy(G, p) {
@@ -1143,9 +1158,9 @@ function coBotEasy(G, p) {
 function coBotNormal(G, p) {
   const legal = coLegal(G, p);
   if (legal.length > 1 && Math.random() < 0.15) { const best = coHeur(G, p, CO_NORMAL); let o = legal.filter(c => c.id !== best); const nt = o.filter(c => c.s !== G.trump || coArrastre(G)); if (nt.length) o = nt; return o[Math.floor(Math.random() * o.length)].id; }
-  return coHeur(G, p, CO_NORMAL);
+  return coKeepTrumps(G, p, coHeur(G, p, CO_NORMAL), 10);
 }
-const coBotBest = (G, p) => coHeur(G, p, CO_BEST);
+const coBotBest = (G, p) => coKeepTrumps(G, p, coHeur(G, p, CO_BEST), 10);
 // Muy difícil: imagina repartos de lo que no ve (respetando fallos vistos, cantes y quién tiene la pinta)
 // y juega el resto de la mano con la heurística buena para cada carta posible
 const coClone = G => { const { log, feed, ...r } = G; const c = JSON.parse(JSON.stringify(r)); c.log = []; c.feed = []; return c; };
@@ -1180,7 +1195,7 @@ function coDeterminize(G, p) {
   return null;
 }
 function coRolloutValue(d, t) { return (d.pts[t] + d.cantes[t]) - (d.pts[1 - t] + d.cantes[1 - t]); }
-const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12, noLead: true, winW: 60, vueltasScale: 0.4 };
+const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12, noLead: true, winW: 60, vueltasScale: 0.2 };
 // Muy difícil. El metajuego cambia según el momento:
 // · mano normal, con montón: se guardan los triunfos para el arrastre y nunca se sale de triunfo;
 // · arrastre: se puede salir de triunfo para quitar los de los rivales;
@@ -1283,6 +1298,7 @@ function cardHTML(c, cls = '') {
 }
 
 function renderSeat(p) {
+  if (isCoto()) return;
   const el = $('seat' + p); if (!el) return;
   const n = dealView ? dealView.n[p] : S.hands[p].length - (fx && fx.p === p ? 1 : 0);
   const backs = Array.from({ length: n }, () => '<span class="back"></span>').join('');
@@ -1299,6 +1315,7 @@ function slotHTML(sl, inner) {
 }
 const stacked = cards => cards.map((h, k) => k === 0 ? h : `<div class="stk" style="left:${k * 26}%;top:${k * 20}%">${h}</div>`).join('');
 function renderTable() {
+  if (isCoto()) return;
   // el tamaño de las cartas se ajusta al tapete para que quepan 3 columnas y 4 filas sin pisarse
   const tw = $('table').clientWidth, th = $('table').clientHeight;
   if (tw && th) $('table').style.setProperty('--cw', Math.max(40, Math.min(66, Math.floor(tw / 3.9), Math.floor(th / 4 / 1.5 * 0.9))) + 'px');
@@ -1338,6 +1355,7 @@ function speakerName(S) { const t = S.bet.turnTeam; const ps = [t, t + 2].filter
 function myTurn() { return S.phase === 'play' && S.turn === 0 && !busy && !fx && !S.over; }
 
 function renderHand() {
+  if (isCoto()) return;
   const mine = myTurn();
   $('hand').innerHTML = S.hands[0].filter(c => !(fx && fx.card.id === c.id)).slice(0, dealView ? dealView.n[0] : 3).map(c => {
     const [h, cls] = mine && SETTINGS.hints ? hintFor(c.id) : ['', ''];
@@ -1470,9 +1488,12 @@ async function animateDeal(withTable) {
     const a = f.animate([{ transform: `translate(${from[0] - w}px,${from[1] - h}px) scale(.75)` }, { transform: `translate(${to[0] - w}px,${to[1] - h}px) scale(1)` }], { duration: 230 * SPEEDS[speedIx][1], easing: 'cubic-bezier(.3,.7,.3,1)' });
     await a.finished.catch(() => {}); f.remove();
   };
+  const gen = GEN;
   for (const st of seq) {
+    if (gen !== GEN || isCoto()) return;
     if (st.to === 'T') {
       await fly([ox, oy], slotXY(st.slot));
+      if (gen !== GEN || !dealView) return;
       if (st.pixat) {
         dealView.temp = { card: st.card, slot: st.slot }; renderTable();
         narr = L(`<b>S'ha pixat:</b> ${RNA[st.card.r]} ya estaba en el tapete. Se aparta y volverá al mazo al acabar de repartir.`, `<b>S'ha pixat:</b> ${RNA[st.card.r]} ja estava al tapet. S'aparta i tornarà a la baralla en acabar de repartir.`); $('narr').innerHTML = narr;
@@ -1483,6 +1504,7 @@ async function animateDeal(withTable) {
     } else {
       const p = st.to;
       await fly([ox, oy], center(p === 0 ? $('hand') : ($('seat' + p).querySelector('.backs') || $('seat' + p))));
+      if (gen !== GEN || !dealView) return;
       dealView.n[p]++; p === 0 ? renderHand() : renderSeat(p);
     }
   }
@@ -1490,16 +1512,18 @@ async function animateDeal(withTable) {
   await sleep(700);
 }
 async function beginHand() {
-  busy = true;
-  try { await animateDeal(true); await drainFeed(); } finally { busy = false; }
+  dealView = { n: [0,0,0,0], table: false, tableIds: new Set(), temp: null };
+  busy = true; const gen = GEN;
+  try { await animateDeal(true); await drainFeed(); } finally { if (gen === GEN) busy = false; }
+  if (gen !== GEN) return;
   render(); loop();
 }
 
 async function loop() {
   if (isCoto()) return cotoLoop();
-  if (busy) return; busy = true;
+  if (busy) return; busy = true; const gen = GEN;
   try {
-    while (!S.over || S.phase === 'play') {
+    while ((!S.over || S.phase === 'play') && gen === GEN && !isCoto()) {
       while (!$('overlay').hidden && !['handEnd','gameEnd'].includes(S.phase)) await new Promise(r => setTimeout(r, 200));
       save();
       if (S.over) break;
@@ -1517,7 +1541,7 @@ async function loop() {
         botBet(S); render(); await drainFeed();
       } else break;
     }
-  } finally { busy = false; save(); render(); }
+  } finally { if (gen === GEN) { busy = false; save(); render(); } }
 }
 
 function showPanel(html) { $('panel').classList.remove('menu'); $('panel').innerHTML = html; $('overlay').hidden = false; const f = $('panel').querySelector('button'); if (f) f.focus(); }
@@ -1748,6 +1772,7 @@ function renderCoto() {
   if (['handEnd', 'partidaEnd', 'cotoEnd'].includes(G.phase) && $('overlay').hidden && !busy) showCotoSummary();
 }
 function coRenderSeat(p) {
+  if (!isCoto()) return;
   const el = $('seat' + p); if (!el) return;
   const n = coDealView ? coDealView.n[p] : G.hands[p].filter(c => !coHide.has(c.id)).length;
   // al acabar la partida a mitad de mano se destapan las cartas que le quedaban a cada uno
@@ -1757,6 +1782,7 @@ function coRenderSeat(p) {
   el.innerHTML = `<div class="av ${team(p) === 0 ? 'us' : ''}">${NAMES[p][0]}</div><div class="who"><span class="nm">${NAMES[p]}</span><span class="sub">${p === 2 ? L('Compañera', 'Companya') : 'Rival'}</span>${dealer}</div><div class="backs">${backs}</div><div class="bubble"></div>`;
 }
 function coRenderTable() {
+  if (!isCoto()) return;
   const tw = $('table').clientWidth, th = $('table').clientHeight;
   if (tw && th) $('table').style.setProperty('--cw', Math.max(40, Math.min(66, Math.floor(tw / 4.1), Math.floor(th / 3.6 / 1.5))) + 'px');
   let h = '';
@@ -1775,6 +1801,7 @@ function coRenderTable() {
 }
 function coMyLegal() { return G.phase === 'play' && G.turn === 0 && !busy && !coDealView ? coLegal(G, 0).map(c => c.id) : []; }
 function coRenderHand() {
+  if (!isCoto()) return;
   const legal = coMyLegal(), n = coDealView ? coDealView.n[0] : 6;
   $('hand').classList.add('co-hand');
   $('hand').innerHTML = G.hands[0].filter(c => !coHide.has(c.id)).slice(0, n).map(c => `<button class="hc" type="button" data-id="${c.id}" ${legal.includes(c.id) ? '' : 'disabled'}>${cardHTML(c)}</button>`).join('');
@@ -1847,13 +1874,14 @@ async function coDoPlay(p, id) {
   if (G.phase !== 'play' && G.hands.some(h => h.length)) {   // se han salido a mitad de mano: se destapan las cartas
     coReveal = true; render(); await coDrain(); await sleep(2600); coReveal = false; render(); return;
   }
+  if (G.autoSwap) { await coDrain(); G.autoSwap = null; }
   await coAnimDraw();
   await coDrain();
 }
 async function cotoLoop() {
-  if (busy) return; busy = true;
+  if (busy) return; busy = true; const gen = GEN;
   try {
-    while (true) {
+    while (gen === GEN && isCoto()) {
       while (!$('overlay').hidden && G.phase === 'play') await new Promise(r => setTimeout(r, 200));
       save();
       if (G.phase !== 'play') break;
@@ -1868,7 +1896,7 @@ async function cotoLoop() {
       await sleep(350);
       await coDoPlay(p, coBotChoose(G, p, levelOf(p)));
     }
-  } finally { busy = false; save(); render(); }
+  } finally { if (gen === GEN) { busy = false; save(); render(); } }
 }
 async function animateCotoDeal() {
   coDealView = { n: [0, 0, 0, 0], stock: false };
@@ -1884,23 +1912,30 @@ async function animateCotoDeal() {
     const a = f.animate([{ transform: `translate(${ox - w}px,${oy - h}px) scale(.75)` }, { transform: `translate(${to[0] - w}px,${to[1] - h}px) scale(1)` }], { duration: 150 * SPEEDS[speedIx][1], easing: 'cubic-bezier(.3,.7,.3,1)' });
     await a.finished.catch(() => {}); f.remove();
   };
+  const gen = GEN;
   for (const st of G.dealSeq) {
+    if (gen !== GEN || !isCoto()) return;
     const p = st.to;
     await fly(center(p === 0 ? $('hand') : ($('seat' + p).querySelector('.backs') || $('seat' + p))), st.n);
+    if (gen !== GEN || !coDealView) return;
     coDealView.n[p] += st.n; p === 0 ? coRenderHand() : coRenderSeat(p);
   }
   const tb = $('table').getBoundingClientRect();
   // se destapa la pinta
-  await fly([tb.left + tb.width * 0.16, tb.top + tb.height * 0.13], 1);
+  await fly([tb.left + tb.width * 0.5, tb.top + tb.height * 0.5], 1);
+  if (gen !== GEN || !coDealView) return;
   coDealView.stock = true; coRenderTable();
   await sleep(500);
+  if (gen !== GEN) return;
   coDealView = null;
   narr = L(`Pintan <b>${SUITN[G.trump]}</b>.`, `Pinten <b>${SUITN[G.trump]}</b>.`);
   render(); await callout(L(`Pintan ${SUITN[G.trump]}`, `Pinten ${SUITN[G.trump]}`), cardName(G.pinta));
 }
 async function beginCoto() {
-  busy = true;
-  try { G.feed = []; await animateCotoDeal(); } finally { busy = false; }
+  coDealView = { n: [0, 0, 0, 0], stock: false };
+  busy = true; const gen = GEN;
+  try { G.feed = []; await animateCotoDeal(); } finally { if (gen === GEN) busy = false; }
+  if (gen !== GEN) return;
   render(); cotoLoop();
 }
 function showCotoSummary() {
@@ -1965,18 +2000,20 @@ function showDraw() {
 }
 function matchGo() {
   closePanel();
-  if (APP.M.stage === 'cau') { narr = L(`Mano 1. Reparte ${NAMES[S.dealer]}.`, `Mà 1. Reparteix ${NAMES[S.dealer]}.`); render(); beginHand(); }
+  if (APP.M.stage === 'cau') { narr = L(`Mano 1. Reparte ${NAMES[S.dealer]}.`, `Mà 1. Reparteix ${NAMES[S.dealer]}.`); beginHand(); }
 }
 function matchTiebreak() {
   const M = APP.M; M.stage = 'tb'; M.cur = M.tb; closePanel();
-  if (M.tb === 'coto') { G = cotoNewMatch(SETTINGS.cotoBest || 5); render(); beginCoto(); }
-  else { S = newGame(); S.feed = []; narr = L(`Mano 1. Reparte ${NAMES[S.dealer]}.`, `Mà 1. Reparteix ${NAMES[S.dealer]}.`); render(); beginHand(); }
+  if (M.tb === 'coto') { G = cotoNewMatch(SETTINGS.cotoBest || 5); beginCoto(); }
+  else { S = newGame(); S.feed = []; narr = L(`Mano 1. Reparte ${NAMES[S.dealer]}.`, `Mà 1. Reparteix ${NAMES[S.dealer]}.`); beginHand(); }
 }
+let GEN = 0;
 function startGame(mode) {
+  GEN++; busy = false; coDealView = null; dealView = null; fx = null; coFx = null; coShowLast = false; coHide = new Set(); coReveal = false;
   APP.mode = mode; APP.M = mode === 'cotocau' ? { stage: 'coto', cur: 'coto', res: {} } : null;
   hasSaved = true; closePanel();
-  if (mode === 'cau') { S = newGame(); S.feed = []; narr = L(`Mano 1. Reparte ${NAMES[S.dealer]}.`, `Mà 1. Reparteix ${NAMES[S.dealer]}.`); render(); beginHand(); return; }
-  G = cotoNewMatch(SETTINGS.cotoBest || 5); render(); beginCoto();
+  if (mode === 'cau') { S = newGame(); S.feed = []; narr = L(`Mano 1. Reparte ${NAMES[S.dealer]}.`, `Mà 1. Reparteix ${NAMES[S.dealer]}.`); beginHand(); return; }
+  G = cotoNewMatch(SETTINGS.cotoBest || 5); beginCoto();
 }
 function continueLabel() {
   if (APP.mode === 'cau' && S) { const [n, w] = scoreTxt(S.score[0]), [m, v] = scoreTxt(S.score[1]); return `Cau · ${L('Mano', 'Mà')} ${S.handNo} · ${n} ${w} – ${m} ${v}`; }
