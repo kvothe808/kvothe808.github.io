@@ -1414,7 +1414,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-10-30-18';
+const APP_VER = 'cau-2026-10-30-19';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
@@ -1983,6 +1983,7 @@ $('btnMenu').addEventListener('click', showMenu);
 let G = null;                                   // partida de Coto en curso
 const APP = { mode: 'cau', M: null };           // mode: 'cau' | 'coto' | 'cotocau'; M: estado del CotoCau
 const isCoto = () => APP.mode === 'coto' || (APP.mode === 'cotocau' && APP.M && APP.M.cur === 'coto');
+let coPend = 0;   // cartas del montón que aún no han volado a las manos
 let coFx = null, coShowLast = false, coDealView = null, coHide = new Set(), coReveal = false;
 const coScoreTxt = s => s <= 50 ? [s, s === 1 ? 'mala' : L('malas', 'males')] : [s - 50, s - 50 === 1 ? L('buena', 'bona') : L('buenas', 'bones')];
 const CO_POS = [[50, 77], [84, 50], [50, 23], [16, 50]];
@@ -1992,12 +1993,15 @@ function renderCoto() {
   for (const i of [0, 1]) { const [n, w] = coScoreTxt(G.score[i]); $('sc' + i).innerHTML = `${n}<small>${w}</small>`; }
   const pip = t => Array.from({ length: G.need }, (_, k) => k < G.wins[t] ? '●' : '○').join('');
   $('lbl0').textContent = `${TEAMN[0]} ${pip(0)}`; $('lbl1').textContent = `${pip(1)} ${TEAMN[1]}`;
-  $('info').textContent = `${APP.mode === 'cotocau' ? 'CotoCau · ' : ''}${L('Partida', 'Partida')} ${G.partidaNo} · ${G.vueltas ? L('De vueltas', 'De voltes') : L('Mano', 'Mà')} · ${coArrastre(G) ? L('Arrastre', 'Arrossegament') : L(`Montón ${G.stock.length}`, `Munt ${G.stock.length}`)}`;
+  renderCotoInfo();
   $('btnRules').textContent = L('Reglas', 'Regles'); $('brand').textContent = 'Coto';
   [1, 2, 3].forEach(coRenderSeat);
   coRenderTable(); coRenderHand(); coRenderBottom();
   $('narr').innerHTML = narr;
   if (['handEnd', 'partidaEnd', 'cotoEnd'].includes(G.phase) && $('overlay').hidden && !busy) showCotoSummary();
+}
+function renderCotoInfo() {
+  $('info').textContent = `${APP.mode === 'cotocau' ? 'CotoCau · ' : ''}${L('Partida', 'Partida')} ${G.partidaNo} · ${G.vueltas ? L('De vueltas', 'De voltes') : L('Mano', 'Mà')} · ${G.stock.length + coPend === 0 ? L('Arrastre', 'Arrossegament') : L(`Montón ${G.stock.length + coPend}`, `Munt ${G.stock.length + coPend}`)}`;
 }
 function coRenderSeat(p) {
   if (!isCoto()) return;
@@ -2015,8 +2019,8 @@ function coRenderTable() {
   if (tw && th) $('table').style.setProperty('--cw', Math.max(40, Math.min(66, Math.floor(tw / 4.1), Math.floor(th / 3.6 / 1.5))) + 'px');
   let h = '';
   // montón con la pinta debajo
-  if (coDealView ? coDealView.stock : G.stock.length) {
-    const n = coDealView ? 16 : G.stock.length;
+  if (coDealView ? coDealView.stock : G.stock.length + coPend) {
+    const n = coDealView ? 16 : G.stock.length + coPend;
     h += `<div class="co-stock" id="costock"><div class="co-pinta" id="copinta">${cardHTML(G.pinta)}</div>${n > 1 ? `<span class="back big"></span><span class="co-count">${n}</span>` : ''}</div>`;
   } else if (!coDealView) h += `<div class="co-trump">${L('Pintan', 'Pinten')} <b>${SUITN[G.trump]}</b></div>`;
   const trick = coShowLast && G.lastTrick ? G.lastTrick.cards : G.trick;
@@ -2076,9 +2080,9 @@ async function coAnimDraw() {
   for (const d of draws) {
     const isPinta = !G.stock.length && d === draws[draws.length - 1];
     await coFly(origin, coCenter(coSeatTarget(d.p)), isPinta || d.p === 0 ? `<div style="--cw:46px">${cardHTML(coCard(d.id))}</div>` : '<span class="back"></span>', 240);
-    coHide.delete(d.id); d.p === 0 ? coRenderHand() : coRenderSeat(d.p);
+    coHide.delete(d.id); coPend = Math.max(0, coPend - 1); d.p === 0 ? coRenderHand() : coRenderSeat(d.p); coRenderTable(); $('info') && renderCotoInfo();
   }
-  G.lastDraw = [];
+  G.lastDraw = []; coPend = 0;
   render();
 }
 // cambiar el 7: el 7 va al centro y la pinta va a la mano de quien lo cambia
@@ -2094,6 +2098,8 @@ async function coDoPlay(p, id) {
   const c = G.hands[p].find(x => x.id === id);
   coFx = { p, id };
   const r = coPlay(G, p, id);
+  // lo que se roba ya está en las manos del motor: se esconde hasta que llegue volando
+  if (r.done && G.lastDraw && G.lastDraw.length) { G.lastDraw.forEach(d => coHide.add(d.id)); coPend = G.lastDraw.length; }
   narr = `<b>${NAMES[p]}</b> ${p === 0 ? L('juegas', 'jugues') : L('juega', 'juga')} ${cardName(c)}.`;
   if (!r.done) { render(); await sleep(520); coFx = null; return; }
   coShowLast = true; render(); await sleep(750);
@@ -2101,7 +2107,7 @@ async function coDoPlay(p, id) {
   render(); await callout(r.pts >= 10 ? `+${r.pts}` : L('Baza', 'Basa'), NAMES[r.winner]);
   coShowLast = false; coFx = null;
   if (G.phase !== 'play' && G.hands.some(h => h.length)) {   // se han salido a mitad de mano: se destapan las cartas
-    coReveal = true; render(); await coDrain(); await sleep(2600); coReveal = false; render(); return;
+    coHide = new Set(); coPend = 0; G.lastDraw = []; coReveal = true; render(); await coDrain(); await sleep(2600); coReveal = false; render(); return;
   }
   if (G.autoSwap) { await coDrain(); G.autoSwap = null; }
   await coAnimDraw();
@@ -2249,7 +2255,7 @@ function matchTiebreak() {
 }
 let GEN = 0;
 function startGame(mode) {
-  GEN++; busy = false; coDealView = null; dealView = null; fx = null; coFx = null; coShowLast = false; coHide = new Set(); coReveal = false;
+  GEN++; busy = false; coDealView = null; dealView = null; fx = null; coFx = null; coShowLast = false; coHide = new Set(); coPend = 0; coReveal = false;
   APP.mode = mode; APP.M = mode === 'cotocau' ? { stage: 'coto', cur: 'coto', res: {} } : null;
   hasSaved = true; closePanel();
   if (mode === 'cau') { S = newGame(); S.feed = []; narr = L(`Mano 1. Reparte ${NAMES[S.dealer]}.`, `Mà 1. Reparteix ${NAMES[S.dealer]}.`); beginHand(); return; }
