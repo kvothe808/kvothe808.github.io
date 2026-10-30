@@ -281,13 +281,16 @@ function newHand(S) {
   S.turn = (S.dealer + 1) % 4;
   say(S, L(`Mano ${S.handNo}. Reparte ${NAMES[S.dealer]}.`, `Mà ${S.handNo}. Reparteix ${NAMES[S.dealer]}.`), 'hand');
   // Reparto real: una al centro, una a cada jugador, otra al centro… (4 al centro y 3 a cada uno)
-  S.dealSeq = [];
+  S.dealSeq = []; S.aside = [];
   const order = [1,2,3,4].map(i => (S.dealer + i) % 4);
   for (let k = 0; k < 4; k++) {
     dealCenter(S);
     if (k < 3) for (const p of order) { const c = S.deck.pop(); S.hands[p].push(c); S.dealSeq.push({ to: p, id: c.id }); }
   }
   S.public.push(...S.table.map(c => c.id));
+  // las pixadas entran en el mazo, cada una en una posición al azar (sin volver a barajar)
+  for (const c of S.aside) S.deck.splice(Math.floor(Math.random() * (S.deck.length + 1)), 0, c);
+  S.asideIds = S.aside.map(c => c.id);
   S.round = 1;
   postDeal(S);
 }
@@ -297,8 +300,8 @@ function dealCenter(S) {
     const c = S.deck.pop(); const slot = pickSlot(S);
     if (S.table.some(t => t.r === c.r)) {
       S.dealSeq.push({ to: 'T', card: c, slot, pixat: true });
-      S.deck.push(c); shuffle(S.deck);
-      say(S, L(`S'ha pixat: ${RNA[c.r]} ya estaba en el tapete y vuelve al mazo.`, `S'ha pixat: ${RNA[c.r]} ja estava al tapet i torna a la baralla.`), 'pixat');
+      S.aside.push(c);    // se aparta a la vista de todos; entra en el mazo al acabar de repartir
+      say(S, L(`S'ha pixat: ${RNA[c.r]} ya estaba en el tapete. Se aparta y volverá al mazo al acabar de repartir.`, `S'ha pixat: ${RNA[c.r]} ja estava al tapet. S'aparta i tornarà a la baralla en acabar de repartir.`), 'pixat');
       if (SETTINGS.socarrat) { const t = 1 - team(S.dealer); say(S, L(`Sóc socarrat: ${TEAMN[t]} se apuntan 1.`, `Sóc socarrat: ${TEAMN[t]} s'apunten 1.`), 'pts'); addPts(S, t, 'pixat', 1); }
       continue;
     }
@@ -333,6 +336,7 @@ function postDeal(S) {
   S.dealStart = S.turn;
   S.dealCombos = [0,1,2,3].map(p => combo(S.hands[p]));
   S.sung = [null,null,null,null]; S.first = [false,false,false,false]; S.second = [false,false,false,false];
+  S.inf = { no: [[],[],[],[]], soft: [[],[],[],[]], played: [[],[],[],[]] };
   S.nitState = 'open'; S.nitContested = false;
   S.phase = 'play';
   if (S.round === 3) {
@@ -461,9 +465,21 @@ function resolveChain(S, ev, noLimpia) {
 }
 
 // Aplica una jugada. Devuelve los eventos y las cartas que salen de la mesa.
+function noteInference(S, p, card) {
+  // Lo que cualquiera en la mesa puede deducir: si no hace bac o rebac pudiendo, no tenía ese número
+  // (en el resto del reparto ya no le entra ninguna carta); si no captura pudiendo, probablemente tampoco.
+  const I = S.inf || (S.inf = { no: [[],[],[],[]], soft: [[],[],[],[]], played: [[],[],[],[]] });
+  const add = (a, r) => { if (!a.includes(r)) a.push(r); };
+  I.played[p].push(card);
+  if (S.chain) { if (card.r !== S.chain.r) add(I.no[p], S.chain.r); return; }
+  const lp = S.lastPlay, bacCard = lp && !lp.cap && lp.p === (p + 3) % 4 && S.table.some(c => c.id === lp.id) ? lp : null;
+  if (bacCard && card.r !== bacCard.r) add(I.no[p], bacCard.r);
+  for (const c of S.table) if (c.r !== card.r && !(bacCard && bacCard.id === c.id)) add(I.soft[p], c.r);
+}
 function applyPlay(S, p, cid) {
   const ev = []; const h = S.hands[p];
   if (h.length === 3) S.first[p] = true;
+  noteInference(S, p, h.find(c => c.id === cid));
   const card = h.splice(h.findIndex(c => c.id === cid), 1)[0];
   S.public.push(card.id);
   // la última jugada de la mano (última carta del tercer reparto) nunca hace limpia
@@ -561,6 +577,8 @@ function endHand(S) {
 /* ---------------- Bots ---------------- */
 function unknownFor(S, p) {
   const known = new Set(S.public); S.hands[p].forEach(c => known.add(c.id));
+  // en el primer reparto las pixadas están en el mazo: no las tiene nadie en la mano
+  if (S.round === 1 && S.asideIds && INFER.on) S.asideIds.forEach(id => known.add(id));
   return ALL.filter(c => !known.has(c.id));
 }
 function probHas(U, k, h) {
@@ -618,11 +636,42 @@ function botChooseEasy(S, p) {
   for (const c of h) { const sim = cloneLite(S); const v0 = value(sim, t); applyPlay(sim, p, c.id); const v = value(sim, t) - v0 + Math.random() * 0.8; if (v > bv) { bv = v; best = c.id; } }
   return best;
 }
+const INFER = { on: true };
+// Reparte al azar las cartas que el bot no ve, pero respetando lo que se ha visto en la mesa:
+// quien ha cantado de nit tiene pareja (o rondín), quien no ha hecho bac pudiendo no tenía ese número,
+// y quien no ha capturado pudiendo, probablemente tampoco (se respeta 3 de cada 4 veces).
 function determinize(S, p) {
-  const d = cloneLite(S); const unk = shuffle(unknownFor(S, p).map(c => ({ ...c })));
-  let i = 0;
-  for (let q = 0; q < 4; q++) { if (q === p) continue; const n = d.hands[q].length; d.hands[q] = unk.slice(i, i + n); i += n; }
-  d.deck = unk.slice(i);
+  const d = cloneLite(S);
+  const aside = S.round === 1 && S.asideIds && INFER.on ? ALL.filter(c => S.asideIds.includes(c.id) && !S.public.includes(c.id)) : [];
+  const unk = unknownFor(S, p);
+  const others = [0,1,2,3].filter(q => q !== p);
+  const I = S.inf;
+  if (INFER.on && I) {
+    for (let tries = 0; tries < 40; tries++) {
+      const pool = shuffle(unk.map(c => ({ ...c }))); let ok = true; const hands = {};
+      for (const q of shuffle(others.slice())) {
+        const n = S.hands[q].length, soft = I.soft[q].filter(() => Math.random() < 0.75), h = [];
+        for (let i = 0; i < pool.length && h.length < n;) {
+          const c = pool[i];
+          if (I.no[q].includes(c.r) || soft.includes(c.r)) { i++; continue; }
+          h.push(c); pool.splice(i, 1);
+        }
+        if (h.length < n) { ok = false; break; }
+        if (S.sung && S.sung[q] && tries < 30) {
+          const cb = combo(I.played[q].concat(h)), need = S.second && S.second[q] ? 2 : 1;
+          if (!cb || cb.t < need) { ok = false; break; }
+        }
+        hands[q] = h;
+      }
+      if (!ok) continue;
+      others.forEach(q => d.hands[q] = hands[q]);
+      d.deck = shuffle(pool.concat(aside.map(c => ({ ...c }))));
+      return d;
+    }
+  }
+  const u = shuffle(unk.map(c => ({ ...c }))); let i = 0;
+  for (const q of others) { const n = d.hands[q].length; d.hands[q] = u.slice(i, i + n); i += n; }
+  d.deck = shuffle(u.slice(i).concat(aside.map(c => ({ ...c }))));
   return d;
 }
 function botChooseHard(S, p) {
@@ -1004,7 +1053,7 @@ async function animateDeal(withTable) {
       await fly([ox, oy], slotXY(st.slot));
       if (st.pixat) {
         dealView.temp = { card: st.card, slot: st.slot }; renderTable();
-        narr = L(`<b>S'ha pixat:</b> ${RNA[st.card.r]} ya estaba en el tapete. Vuelve al mazo.`, `<b>S'ha pixat:</b> ${RNA[st.card.r]} ja estava al tapet. Torna a la baralla.`); $('narr').innerHTML = narr;
+        narr = L(`<b>S'ha pixat:</b> ${RNA[st.card.r]} ya estaba en el tapete. Se aparta y volverá al mazo al acabar de repartir.`, `<b>S'ha pixat:</b> ${RNA[st.card.r]} ja estava al tapet. S'aparta i tornarà a la baralla en acabar de repartir.`); $('narr').innerHTML = narr;
         await callout("S'ha pixat", SETTINGS.socarrat ? `${TEAMN[1 - team(S.dealer)]} · +1` : `${RN[st.card.r]} ${L('repetido', 'repetit')}`);
         dealView.temp = null; renderTable();
         await fly(slotXY(st.slot), [ox, oy]);
@@ -1076,7 +1125,7 @@ function showRules() {
   const close = `<div class="acts"><button class="btn primary" type="button" data-act="close">${L('Cerrar', 'Tancar')}</button></div>`;
   showPanel((LANG === 'va' ? `<h2>Regles del Cau</h2>
   <p>Quatre jugadors en dues parelles, baralla espanyola de 40 cartes. Es juga cap a la dreta. Només compta el número, mai el pal.</p>
-  <h3>Repartiment</h3><ul><li>Una carta al centre, una a cada jugador, una altra al centre… fins que n'hi ha 4 al tapet i 3 a cadascú.</li><li>Si al tapet es repeteix un número, «s'ha pixat»: la repetida torna a la baralla, es barreja i n'ix una altra.</li><li>Quan ningú té cartes es reparteixen 3 més. Hi ha 3 repartiments per mà i cada repartiment comença jugada nova.</li></ul>
+  <h3>Repartiment</h3><ul><li>Una carta al centre, una a cada jugador, una altra al centre… fins que n'hi ha 4 al tapet i 3 a cadascú.</li><li>Si al tapet es repeteix un número, «s'ha pixat»: la repetida s'aparta, n'ix una altra i, en acabar de repartir, la repetida entra a la baralla en una posició a l'atzar.</li><li>Quan ningú té cartes es reparteixen 3 més. Hi ha 3 repartiments per mà i cada repartiment comença jugada nova.</li></ul>
   <h3>Jugar</h3><ul><li>Si la teua carta té el mateix número que una del tapet, l'arreplegues.</li><li>Escala: t'endús també les cartes següents que hi haja al tapet (5 → 6 → 7 → sota → cavall → rei).</li><li>Si no arreplegues, la carta es queda al tapet.</li></ul>
   <h3>Jugades especials</h3>
   <div class="pts"><div><b>Bac · 2</b><span>Mates la carta que acaba de deixar el jugador anterior.</span></div><div><b>Rebac · 3</b><span>El següent mata el bac: el bac perd els seus 2 punts.</span></div><div><b>Sant Vicent · 4</b><span>La quarta carta mata el rebac: el rebac perd els seus 3.</span></div><div><b>Limpia · 1</b><span>Deixes el tapet buit.</span></div></div>
@@ -1086,7 +1135,7 @@ function showRules() {
   <h3>Dubtes pendents</h3><ul><li>Si dos de nit són iguals (per exemple, parella de cincs contra parella de cincs), ara guanya qui és mà.</li><li>Si us jugueu la partida en el de nit i una parella arriba a 40 abans d'acabar la mà, ara guanya eixa parella i el de nit no es mira.</li></ul>
   ` : `<h2>Reglas del Cau</h2>
   <p>Cuatro jugadores en dos parejas, baraja española de 40 cartas. Se juega hacia la derecha. Solo cuenta el número, nunca el palo.</p>
-  <h3>Reparto</h3><ul><li>Una carta al centro, una a cada jugador, otra al centro… hasta tener 4 en el tapete y 3 cada uno.</li><li>Si en el tapete se repite un número, «s'ha pixat»: la repetida vuelve al mazo, se baraja y sale otra.</li><li>Cuando nadie tiene cartas se reparten otras 3. Hay 3 repartos por mano y cada reparto empieza jugada nueva.</li></ul>
+  <h3>Reparto</h3><ul><li>Una carta al centro, una a cada jugador, otra al centro… hasta tener 4 en el tapete y 3 cada uno.</li><li>Si en el tapete se repite un número, «s'ha pixat»: la repetida se aparta, sale otra y, al acabar de repartir, la repetida entra en el mazo en una posición al azar.</li><li>Cuando nadie tiene cartas se reparten otras 3. Hay 3 repartos por mano y cada reparto empieza jugada nueva.</li></ul>
   <h3>Jugar</h3><ul><li>Si tu carta tiene el mismo número que una de la mesa, la capturas.</li><li>Escala: te llevas también las cartas siguientes que haya en la mesa (5 → 6 → 7 → sota → caballo → rey).</li><li>Si no capturas, tu carta se queda en la mesa.</li></ul>
   <h3>Jugadas especiales</h3>
   <div class="pts"><div><b>Bac · 2</b><span>Matas la carta que acaba de dejar el jugador anterior.</span></div><div><b>Rebac · 3</b><span>El siguiente mata el bac: el bac pierde sus 2 puntos.</span></div><div><b>Sant Vicent · 4</b><span>La cuarta carta mata el rebac: el rebac pierde sus 3.</span></div><div><b>Limpia · 1</b><span>Dejas la mesa vacía.</span></div></div>
@@ -1122,7 +1171,6 @@ function showSettings() {
     <span><small>${L('Rival de la izquierda', "Rival de l'esquerra")}</small><input id="nm3" type="text" maxlength="14" value="${esc(NAMES[3])}"></span></div></div>
   <div class="opt"><label>${L(`Tu compañera (${esc(NAMES[2])})`, `La teua companya (${esc(NAMES[2])})`)}</label>${seg('partner', LVL(), SETTINGS.partner)}</div>
   <div class="opt"><label>${L(`Rivales (${esc(NAMES[1])} y ${esc(NAMES[3])})`, `Rivals (${esc(NAMES[1])} i ${esc(NAMES[3])})`)}</label>${seg('rivals', LVL(), SETTINGS.rivals)}</div>
-  <p class="desc">${LEVELDESC()}</p>
   <div class="opt"><label>${L('Ayudas en tus cartas', 'Ajudes en les teues cartes')}</label>${seg('hints', off, SETTINGS.hints, true)}<span class="desc">${L('Muestran debajo de cada carta qué pasa si la juegas (Captura 3, Bac +2…).', 'Mostren davall de cada carta què passa si la jugues (Arreplega 3, Bac +2…).')}</span></div>
   <div class="opt"><label>${L('Etiquetas bajo el nombre', 'Etiquetes davall del nom')}</label>${seg('labels', off, SETTINGS.labels, true)}<span class="desc">${L('Recuerdan la última jugada de cada uno (Bac, Limpia, Captura 2…). El «De nit» se ve siempre.', "Recorden l'última jugada de cadascú (Bac, Limpia, Arreplega 2…). El «De nit» es veu sempre.")}</span></div>
   <div class="opt"><label>Sóc socarrat</label>${seg('socarrat', [[false,'No'],[true,'Sí']], SETTINGS.socarrat, true)}<span class="desc">${L("A la manera de Cocentaina: cada vez que s'ha pixat al repartir, la pareja que no reparte se apunta un punto.", "A la manera de Cocentaina: cada vegada que s'ha pixat en repartir, la parella que no reparteix s'apunta un punt.")}</span></div>
@@ -1195,7 +1243,7 @@ $('btnRules').addEventListener('click', () => { panelBack = null; showRules(); }
 $('btnLog').addEventListener('click', () => { panelBack = null; showLog(); });
 $('btnMenu').addEventListener('click', showMenu);
 
-window.CAU = { newGame, newHand, applyPlay, afterPlay, botChoose, botChooseHard, botChooseNormal, botChooseEasy, botChooseDificil, botChooseExperto, botBet, botSing, SETTINGS, betAct, betOptions, sing, startSing, resolveNit, canFirst, canSecond, cardSVG, get S() { return S; } };
+window.CAU = { newGame, newHand, applyPlay, afterPlay, INFER, determinize, botChoose, botChooseHard, botChooseNormal, botChooseEasy, botChooseDificil, botChooseExperto, botBet, botSing, SETTINGS, betAct, betOptions, sing, startSing, resolveNit, canFirst, canSecond, cardSVG, get S() { return S; } };
 
 function start(data) {
   if (data && data.S) { S = data.S; S.feed = []; hasSaved = true; render(); loop(); return; }
