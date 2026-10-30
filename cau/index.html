@@ -1180,10 +1180,21 @@ function coDeterminize(G, p) {
   return null;
 }
 function coRolloutValue(d, t) { return (d.pts[t] + d.cantes[t]) - (d.pts[1 - t] + d.cantes[1 - t]); }
-const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12 };
+const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12, noLead: true, winW: 60, vueltasScale: 0.4 };
+// Muy difícil. El metajuego cambia según el momento:
+// · mano normal, con montón: se guardan los triunfos para el arrastre y nunca se sale de triunfo;
+// · arrastre: se puede salir de triunfo para quitar los de los rivales;
+// · mano de vueltas: lo que cuenta es salirse antes que ellos (o que no se salgan), apoyando al compañero.
+// Además valora el marcador: ganar la partida en la mano simulada vale mucho más que unos puntos.
 function coBotExpert(G, p, N = 40) {
-  const legal = coLegal(G, p); if (legal.length === 1) return legal[0].id;
-  const t = team(p), tot = {}; legal.forEach(c => tot[c.id] = 0); let n = 0;
+  let legal = coLegal(G, p); if (legal.length === 1) return legal[0].id;
+  const t = team(p), arr = coArrastre(G), lead = !G.trick.length;
+  if (lead && !arr && !G.vueltas && CO_EXP.noLead) {
+    const nt = legal.filter(c => c.s !== G.trump);
+    if (nt.length) legal = nt;              // con montón y en la primera mano, no se sale de triunfo
+    if (legal.length === 1) return legal[0].id;
+  }
+  const tot = {}; legal.forEach(c => tot[c.id] = 0); let n = 0;
   for (let k = 0; k < N; k++) {
     const det = coDeterminize(G, p); if (!det) continue; n++;
     for (const c of legal) {
@@ -1195,13 +1206,15 @@ function coBotExpert(G, p, N = 40) {
         if (sim.phase !== 'play') break;
         coPlay(sim, q, coBotBest(sim, q));
       }
-      tot[c.id] += coRolloutValue(sim, t) - v0;
+      let v = coRolloutValue(sim, t) - v0;
+      if (CO_EXP.winW && sim.partidaWinner != null) v += sim.partidaWinner === t ? CO_EXP.winW : -CO_EXP.winW;
+      tot[c.id] += v;
     }
   }
   if (!n) return coBotBest(G, p);
-  // en la primera fase, los triunfos se guardan para el arrastre (penalización medida con miles de manos)
-  // y no se sale de triunfo antes del arrastre: el as y el tres de triunfo valen mucho más allí
-  const pen = c => coArrastre(G) || c.s !== G.trump ? 0 : CO_EXP.trumpPen + CSTR[c.r] * CO_EXP.trumpPen / 10 + (G.trick.length ? 0 : CO_EXP.leadPen + (CSTR[c.r] >= 8 ? CO_EXP.leadPen : 0));
+  // guardar triunfos: cuesta tirarlos antes del arrastre (menos en la mano de vueltas, donde pocas veces se llega)
+  const k = G.vueltas ? CO_EXP.vueltasScale : 1;
+  const pen = c => arr || c.s !== G.trump ? 0 : k * (CO_EXP.trumpPen + CSTR[c.r] * CO_EXP.trumpPen / 10 + (lead ? CO_EXP.leadPen + (CSTR[c.r] >= 8 ? CO_EXP.leadPen : 0) : 0));
   let best = null, bv = -1e9; for (const c of legal) { const v = tot[c.id] / n - pen(c) + Math.random() * 1e-3; if (v > bv) { bv = v; best = c.id; } }
   return best;
 }
