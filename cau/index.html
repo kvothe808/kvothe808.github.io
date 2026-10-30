@@ -166,6 +166,13 @@ button{font:inherit;color:inherit}
 .opt .desc{font-size:13px;color:var(--ink-soft)}
 .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--line);border-radius:999px;padding:3px;background:rgba(0,0,0,.2)}
 .seg.two{grid-template-columns:repeat(2,1fr)}
+.seg.four{grid-template-columns:repeat(4,1fr)}
+.seg.four button{font-size:12.5px;padding:7px 2px}
+.names{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.names span{display:flex;flex-direction:column;gap:3px;min-width:0}
+.names small{font-size:11px;color:var(--ink-soft)}
+.names input{width:100%;min-width:0;font:600 15px var(--f-body);color:var(--ink);background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:10px;padding:7px 9px}
+.panel .desc{font-size:13px;color:var(--ink-soft);margin:0}
 .seg button{border:0;background:none;border-radius:999px;padding:7px 6px;font-weight:700;font-size:14px;cursor:pointer;color:var(--ink-soft)}
 .seg button[aria-pressed="true"]{background:var(--gold);color:var(--gold-ink)}
 
@@ -190,9 +197,9 @@ button{font:inherit;color:inherit}
 
 <div id="app">
   <header class="bar">
-    <div class="score us"><span class="lbl">Nosotros</span><b id="sc0"></b></div>
+    <div class="score us"><span class="lbl" id="lbl0">Nosotros</span><b id="sc0"></b></div>
     <div class="mid"><div class="brand">Cau</div><div class="info" id="info"></div></div>
-    <div class="score them"><span class="lbl">Ellos</span><b id="sc1"></b></div>
+    <div class="score them"><span class="lbl" id="lbl1">Ellos</span><b id="sc1"></b></div>
   </header>
   <nav class="tools">
     <button class="btn" id="btnMenu" type="button">Menú</button>
@@ -220,22 +227,34 @@ button{font:inherit;color:inherit}
 'use strict';
 /* ---------------- Motor del Cau ---------------- */
 const RV = [1,2,3,4,5,6,7,10,11,12];
-const RN = ['As','2','3','4','5','6','7','Sota','Caballo','Rey'];
-const RNA = ['el as','el 2','el 3','el 4','el 5','el 6','el 7','la sota','el caballo','el rey'];
-const RNP = ['ases','doses','treses','cuatros','cincos','seises','sietes','sotas','caballos','reyes'];
-const SUITN = ['oros','copas','espadas','bastos'];
-const NAMES = ['Tú','Toni','Maria','Vicent'];
-const TEAMN = ['Nosotros','Ellos'];
+// Idioma: castellano (es) o valenciano (va). Los textos se escriben con L('castellano', 'valencià')
+let LANG = 'es';
+const L = (es, va) => LANG === 'va' ? va : es, T = (es, va) => LANG === 'va' ? va : es;   // T: donde ya hay una variable local L
+const RN = [], RNA = [], RNP = [], SUITN = [], NAMES = ['Tú','Toni','Maria','Vicent'], TEAMN = [];
+const fill = (a, v) => { a.splice(0, a.length, ...v); };
+function applyLang(lang, names) {
+  LANG = lang === 'va' ? 'va' : 'es';
+  fill(RN, L(['As','2','3','4','5','6','7','Sota','Caballo','Rey'], ['As','2','3','4','5','6','7','Sota','Cavall','Rei']));
+  fill(RNA, L(['el as','el 2','el 3','el 4','el 5','el 6','el 7','la sota','el caballo','el rey'], ["l'as",'el 2','el 3','el 4','el 5','el 6','el 7','la sota','el cavall','el rei']));
+  fill(RNP, L(['ases','doses','treses','cuatros','cincos','seises','sietes','sotas','caballos','reyes'], ['asos','dosos','tresos','quatres','cincs','sisos','setes','sotes','cavalls','reis']));
+  fill(SUITN, L(['oros','copas','espadas','bastos'], ['oros','copes','espases','bastos']));
+  fill(TEAMN, L(['Nosotros','Ellos'], ['Nosaltres','Ells']));
+  NAMES[0] = L('Tú', 'Tu');
+  if (names) for (let i = 0; i < 3; i++) NAMES[i + 1] = (names[i] || ['Toni','Maria','Vicent'][i]).trim().slice(0, 14) || ['Toni','Maria','Vicent'][i];
+}
+applyLang('es');
+const ofSuit = s => LANG === 'va' ? (s === 0 || s === 2 ? "d'" : 'de ') + SUITN[s] : 'de ' + SUITN[s];
+const apunt = (t, n) => L(`${TEAMN[t]} se apuntan ${n} de nit.`, `${TEAMN[t]} s'apunten ${n} de nit.`);
 const TARGET = 40;
 const team = p => p % 2;
 const ALL = []; for (let s = 0; s < 4; s++) for (let r = 0; r < 10; r++) ALL.push({ id: s*10 + r, r, s });
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const clone = o => JSON.parse(JSON.stringify(o));
 const cloneLite = o => { const { log, feed, ...rest } = o; const c = JSON.parse(JSON.stringify(rest)); c.log = []; c.feed = []; return c; };
-const cardName = c => `${RNA[c.r]} de ${SUITN[c.s]}`;
+const cardName = c => `${RNA[c.r]} ${ofSuit(c.s)}`;
 const emptyBon = () => ({ bac:0, rebac:0, sv:0, limpia:0, nit:0, pixat:0 });
 const bonSum = b => b.bac + b.rebac + b.sv + b.limpia + b.nit + (b.pixat || 0);
-const scoreTxt = s => s < 20 ? [s, s === 1 ? 'mala' : 'malas'] : [s - 20, s - 20 === 1 ? 'buena' : 'buenas'];
+const scoreTxt = s => s < 20 ? [s, s === 1 ? 'mala' : L('malas', 'males')] : [s - 20, s - 20 === 1 ? L('buena', 'bona') : L('buenas', 'bones')];
 
 function say(S, txt, k) { S.log.push({ txt, k: k || '' }); if (S.log.length > 500) S.log.splice(0, S.log.length - 500); S.feed.push({ txt, k: k || '' }); }
 
@@ -243,7 +262,7 @@ function addPts(S, t, k, n) {
   S.bon[t][k] += n; S.score[t] += n;
   if (!S.over && n > 0 && S.score[t] >= TARGET) {
     S.over = true; S.winner = t; S.phase = 'gameEnd'; S.endMid = true;
-    say(S, `${TEAMN[t]} llegan a 40: ¡fin de la partida!`, 'pts');
+    say(S, L(`${TEAMN[t]} llegan a 40: ¡fin de la partida!`, `${TEAMN[t]} arriben a 40: final de la partida!`), 'pts');
   }
 }
 
@@ -260,7 +279,7 @@ function newHand(S) {
   S.cap = [0,0]; S.bon = [emptyBon(), emptyBon()]; S.public = []; S.lastCapturer = null;
   S.round = 0; S.bet = null; S.summary = null; S.duels = []; S.duelNotes = []; S.endMid = false; S.bubbles = ['','','',''];
   S.turn = (S.dealer + 1) % 4;
-  say(S, `Mano ${S.handNo}. Reparte ${NAMES[S.dealer]}.`, 'hand');
+  say(S, L(`Mano ${S.handNo}. Reparte ${NAMES[S.dealer]}.`, `Mà ${S.handNo}. Reparteix ${NAMES[S.dealer]}.`), 'hand');
   // Reparto real: una al centro, una a cada jugador, otra al centro… (4 al centro y 3 a cada uno)
   S.dealSeq = [];
   const order = [1,2,3,4].map(i => (S.dealer + i) % 4);
@@ -279,8 +298,8 @@ function dealCenter(S) {
     if (S.table.some(t => t.r === c.r)) {
       S.dealSeq.push({ to: 'T', card: c, slot, pixat: true });
       S.deck.push(c); shuffle(S.deck);
-      say(S, `S'ha pixat: ${RNA[c.r]} ya estaba en el tapete y vuelve al mazo.`, 'pixat');
-      if (SETTINGS.socarrat) { const t = 1 - team(S.dealer); say(S, `Sóc socarrat: ${TEAMN[t]} se apuntan 1.`, 'pts'); addPts(S, t, 'pixat', 1); }
+      say(S, L(`S'ha pixat: ${RNA[c.r]} ya estaba en el tapete y vuelve al mazo.`, `S'ha pixat: ${RNA[c.r]} ja estava al tapet i torna a la baralla.`), 'pixat');
+      if (SETTINGS.socarrat) { const t = 1 - team(S.dealer); say(S, L(`Sóc socarrat: ${TEAMN[t]} se apuntan 1.`, `Sóc socarrat: ${TEAMN[t]} s'apunten 1.`), 'pts'); addPts(S, t, 'pixat', 1); }
       continue;
     }
     S.slots[c.id] = slot; S.table.push(c);
@@ -299,7 +318,7 @@ function combo(hand) {
   }
   return best;
 }
-const comboTxt = c => c.t === 2 ? `rondín de ${RNP[c.r]}` : `pareja de ${RNP[c.r]}`;
+const comboTxt = c => c.t === 2 ? L(`rondín de ${RNP[c.r]}`, `rondí de ${RNP[c.r]}`) : L(`pareja de ${RNP[c.r]}`, `parella de ${RNP[c.r]}`);
 
 function deal(S) {
   S.round++;
@@ -327,7 +346,7 @@ const dealOrder = S => [0,1,2,3].map(i => (S.dealStart + i) % 4);
 function sing(S, p) {
   S.sung[p] = S.dealCombos[p];
   S.bubbles[p] = 'De nit';
-  say(S, p === 0 ? 'Cantas «de nit».' : `${NAMES[p]} canta «de nit».`, 'sing');
+  say(S, p === 0 ? L('Cantas «de nit».', 'Cantes «de nit».') : `${NAMES[p]} canta «de nit».`, 'sing');
 }
 function canFirst(S, p) {
   return S.phase === 'play' && S.turn === p && S.round < 3 && S.nitState === 'open' && !S.first[p] && !S.sung[p] && !!S.dealCombos[p] && S.hands[p].length === 3;
@@ -337,7 +356,7 @@ function canSecond(S, p) {
 }
 function singSecond(S, p) {
   S.second[p] = true; S.bubbles[p] = 'De nit ×2';
-  say(S, p === 0 ? 'Vuelves a cantar «de nit»: tienes rondín.' : `${NAMES[p]} vuelve a cantar «de nit»: tenía rondín.`, 'sing');
+  say(S, p === 0 ? L('Vuelves a cantar «de nit»: tienes rondín.', 'Tornes a cantar «de nit»: tens rondí.') : L(`${NAMES[p]} vuelve a cantar «de nit»: tenía rondín.`, `${NAMES[p]} torna a cantar «de nit»: tenia rondí.`), 'sing');
   addPts(S, team(p), 'nit', 1);
 }
 // Alguien canta en su turno: los que también tienen de nit (y aún no han jugado en este reparto) lo dicen en ese momento
@@ -360,12 +379,12 @@ function resolveNit(S) {
     const first = order.find(p => S.sung[p]);
     S.bet = { base: 0, acc: 0, pending: null, turnTeam: team(first), passes: 0, order };
     S.nitState = 'contest'; S.nitContested = true; S.phase = 'nit';
-    say(S, `Las dos parejas tienen de nit: se habla. Solo cuenta lo que se apueste.`, 'nit');
+    say(S, L('Las dos parejas tienen de nit: se habla. Solo cuenta lo que se apueste.', "Les dues parelles tenen de nit: es parla. Només compta el que s'aposte."), 'nit');
     return;
   }
   S.nitState = 'resolved';
   for (const p of dealOrder(S)) if (S.sung[p] && !S.over) addPts(S, team(p), 'nit', 1);
-  for (const t of [0,1]) if (has[t]) say(S, `${TEAMN[t]} se apuntan ${[0,1,2,3].filter(p => team(p) === t && S.sung[p]).length} de nit.`, 'pts');
+  for (const t of [0,1]) if (has[t]) say(S, apunt(t, [0,1,2,3].filter(p => team(p) === t && S.sung[p]).length), 'pts');
 }
 
 function teamBest(S, t) {
@@ -383,14 +402,15 @@ function betOptions(S) {
   if (b.pending.kind === 'xic') return ['xac','envit','falta','novull'];
   return ['vull','novull','torne','falta'];
 }
-const BETL = { pass:'Passe (ellos ganan 1)', xic:'Xic (1)', envit:'Envide (2)', torne:'Torne a envidar (2 más)', falta:'La partida', xac:'Xac', vull:'Vull', novull:'No vull' };
-const BETSAY = { pass:'passen', xic:'diuen «xic»', envit:'envíden 2', torne:'tornen a envidar', falta:'es juguen la partida', xac:'diuen «xac»', vull:'volen', novull:'no volen' };
+const BETL = o => ({ pass: L('Passe (ellos ganan 1)', 'Passe (ells guanyen 1)'), xic:'Xic (1)', envit:'Envide (2)', torne: L('Torne a envidar (2 más)', 'Torne a envidar (2 més)'), falta:'La partida', xac:'Xac', vull:'Vull', novull:'No vull' })[o];
+const BETSAY = o => (LANG === 'va' ? { pass:'passen', xic:'diuen «xic»', envit:'envíden 2', torne:'tornen a envidar', falta:'es juguen la partida', xac:'diuen «xac»', vull:'volen', novull:'no volen' }
+  : { pass:'pasan', xic:'dicen «xic»', envit:'envidan 2', torne:'vuelven a envidar', falta:'se juegan la partida', xac:'dicen «xac»', vull:'quieren', novull:'no quieren' })[o];
 function betAct(S, t, a) {
   const b = S.bet;
-  say(S, `${TEAMN[t]} ${BETSAY[a]}.`, 'nit');
+  say(S, `${TEAMN[t]} ${BETSAY(a)}.`, 'nit');
   S.lastBet = { t, a };
   if (a === 'pass') {   // pasar el primero es rendirse: la otra pareja gana 1
-    const w = 1 - t; say(S, `${TEAMN[w]} se apuntan 1 de nit.`, 'pts');
+    const w = 1 - t; say(S, apunt(w, 1), 'pts');
     S.bet = null; S.nitState = 'resolved'; S.phase = 'play'; addPts(S, w, 'nit', 1); return;
   }
   // Lo que se juega no se suma: xic = 1, envide = 2, torne a envidar = 2 más sobre lo que había
@@ -401,7 +421,7 @@ function betAct(S, t, a) {
   if (a === 'vull' || a === 'xac') { if (b.pending.falta) return showdown(S, true); b.acc = b.pending.total; return showdown(S, false); }
   if (a === 'novull') {
     const w = b.pending.by, pts = Math.max(1, b.acc);
-    say(S, `${TEAMN[w]} se apuntan ${pts} de nit.`, 'pts');
+    say(S, apunt(w, pts), 'pts');
     S.bet = null; S.nitState = 'resolved'; S.phase = 'play'; addPts(S, w, 'nit', pts);
   }
 }
@@ -412,7 +432,7 @@ function showdown(S, falta) {
   S.bet = null; S.nitState = 'resolved'; S.phase = 'play';
   // No se enseñan las cartas: quién gana se sabe al final de la mano
   (S.duels = S.duels || []).push({ w, pts, falta, a: comboTxt(A.c), b: comboTxt(B.c), round: S.round });
-  say(S, `De nit aceptado: ${falta ? 'se juegan la partida' : `en juego ${pts}`}. Se verá al acabar el reparto.`, 'pts');
+  say(S, L(`De nit aceptado: ${falta ? 'se juegan la partida' : `en juego ${pts}`}. Se verá al acabar el reparto.`, `De nit acceptat: ${falta ? 'es juguen la partida' : `en joc ${pts}`}. Es veurà en acabar el repartiment.`), 'pts');
 }
 
 function takeEscala(S, r) {
@@ -435,8 +455,8 @@ function resolveChain(S, ev, noLimpia) {
   const ch = S.chain; S.chain = null;
   const got = ch.cards.concat(takeEscala(S, ch.r)); const t = team(ch.owner);
   S.cap[t] += got.length; S.lastCapturer = ch.owner;
-  ev.push({ k:'cobra', p: ch.owner, txt: ch.owner === 0 ? `Te llevas ${got.length} cartas` : `${NAMES[ch.owner]} se lleva ${got.length} cartas` });
-  if (!ch.limpia && !noLimpia && S.table.length === 0) { ev.push({ k:'limpia', p: ch.owner, txt:'¡Limpia!', pts:1 }); addPts(S, t, 'limpia', 1); }
+  ev.push({ k:'cobra', p: ch.owner, txt: ch.owner === 0 ? L(`Te llevas ${got.length} cartas`, `T'endús ${got.length} cartes`) : L(`${NAMES[ch.owner]} se lleva ${got.length} cartas`, `${NAMES[ch.owner]} s'endú ${got.length} cartes`) });
+  if (!ch.limpia && !noLimpia && S.table.length === 0) { ev.push({ k:'limpia', p: ch.owner, txt: L('¡Limpia!', 'Limpia!'), pts:1 }); addPts(S, t, 'limpia', 1); }
   return got.map(c => c.id);
 }
 
@@ -456,8 +476,8 @@ function applyPlay(S, p, cid) {
       const n = S.chain.cards.length;
       S.lastPlay = { p, id: card.id, r: card.r, cap: true };
       const L = S.chain.limpia;   // la limpia del bac pasa a quien lo mata
-      if (n === 3) { ev.push({ k:'rebac', p, txt: L ? '¡Rebac + Limpia!' : '¡Rebac!', pts: L ? 4 : 3 }); addPts(S, prevTeam, 'bac', -2); addPts(S, t, 'rebac', 3); }
-      else { ev.push({ k:'sv', p, txt: L ? '¡Sant Vicent + Limpia!' : '¡Sant Vicent!', pts: L ? 5 : 4 }); addPts(S, prevTeam, 'rebac', -3); addPts(S, t, 'sv', 4); }
+      if (n === 3) { ev.push({ k:'rebac', p, txt: L ? T('¡Rebac + Limpia!', 'Rebac + Limpia!') : T('¡Rebac!', 'Rebac!'), pts: L ? 4 : 3 }); addPts(S, prevTeam, 'bac', -2); addPts(S, t, 'rebac', 3); }
+      else { ev.push({ k:'sv', p, txt: L ? T('¡Sant Vicent + Limpia!', 'Sant Vicent + Limpia!') : T('¡Sant Vicent!', 'Sant Vicent!'), pts: L ? 5 : 4 }); addPts(S, prevTeam, 'rebac', -3); addPts(S, t, 'sv', 4); }
       if (L) { addPts(S, prevTeam, 'limpia', -1); if (lastOfHand) { S.chain.limpia = false; ev[ev.length - 1].txt = ev[ev.length - 1].txt.replace(' + Limpia', ''); ev[ev.length - 1].pts -= 1; } else addPts(S, t, 'limpia', 1); }
       if (n === 4) take = resolveChain(S, ev, lastOfHand);
       return { ev, take, card };
@@ -472,7 +492,7 @@ function applyPlay(S, p, cid) {
       const L = !lastOfHand && S.table.length - escLen(S, card.r) === 0;   // el bac deja la mesa vacía: también es limpia
       S.chain = { r: card.r, cards: [prev, card], owner: p, slot: S.slots[prev.id], limpia: L };
       S.lastPlay = { p, id: card.id, r: card.r, cap: true };
-      ev.push({ k:'bac', p, txt: L ? '¡Bac + Limpia!' : '¡Bac!', pts: L ? 3 : 2 }); addPts(S, t, 'bac', 2);
+      ev.push({ k:'bac', p, txt: L ? T('¡Bac + Limpia!', 'Bac + Limpia!') : T('¡Bac!', 'Bac!'), pts: L ? 3 : 2 }); addPts(S, t, 'bac', 2);
       if (L) addPts(S, t, 'limpia', 1);
       return { ev, take, card };
     }
@@ -484,12 +504,12 @@ function applyPlay(S, p, cid) {
     S.cap[t] += got.length; S.lastCapturer = p;
     take = take.concat(got.map(c => c.id));
     S.lastPlay = { p, id: card.id, r: card.r, cap: true };
-    ev.push({ k:'cap', p, txt:`Captura ${got.length}`, n: got.length });
-    if (S.table.length === 0 && !lastOfHand) { ev.push({ k:'limpia', p, txt:'¡Limpia!', pts:1 }); addPts(S, t, 'limpia', 1); }
+    ev.push({ k:'cap', p, txt: L(`Captura ${got.length}`, `Arreplega ${got.length}`), n: got.length });
+    if (S.table.length === 0 && !lastOfHand) { ev.push({ k:'limpia', p, txt: L('¡Limpia!', 'Limpia!'), pts:1 }); addPts(S, t, 'limpia', 1); }
   } else {
     S.slots[card.id] = pickSlot(S); S.table.push(card);
     S.lastPlay = { p, id: card.id, r: card.r, cap: false };
-    ev.push({ k:'deja', p, txt:'Se queda en la mesa' });
+    ev.push({ k:'deja', p, txt: L('Se queda en la mesa', 'Es queda al tapet') });
   }
   return { ev, take, card };
 }
@@ -501,7 +521,7 @@ function afterPlay(S) {
     if (S.chain) { const ev = []; resolveChain(S, ev, S.deck.length === 0); ev.forEach(e => say(S, e.txt, e.k)); if (S.over) return; }
     S.lastPlay = null;
     resolveDuels(S); if (S.over) return;
-    if (S.deck.length) { say(S, `Reparto ${S.round + 1} de 3.`, 'hand'); deal(S); }
+    if (S.deck.length) { say(S, L(`Reparto ${S.round + 1} de 3.`, `Repartiment ${S.round + 1} de 3.`), 'hand'); deal(S); }
     else endHand(S);
   }
 }
@@ -510,7 +530,7 @@ function afterPlay(S) {
 function resolveDuels(S) {
   S.duelNotes = S.duelNotes || [];
   for (const d of (S.duels || [])) {
-    const txt = `De nit del reparto ${d.round}: Nosotros ${d.a}, Ellos ${d.b}. Ganan ${TEAMN[d.w]}${d.falta ? ' la partida' : ` (+${d.pts})`}.`;
+    const txt = L(`De nit del reparto ${d.round}: Nosotros ${d.a}, Ellos ${d.b}. Ganan ${TEAMN[d.w]}${d.falta ? ' la partida' : ` (+${d.pts})`}.`, `De nit del repartiment ${d.round}: Nosaltres ${d.a}, Ells ${d.b}. Guanyen ${TEAMN[d.w]}${d.falta ? ' la partida' : ` (+${d.pts})`}.`);
     S.duelNotes.push(txt); say(S, txt, 'duel');
     if (d.falta) { if (!S.over) { S.over = true; S.winner = d.w; S.endFalta = true; S.endMid = true; S.phase = 'gameEnd'; } }
     else addPts(S, d.w, 'nit', d.pts);
@@ -521,7 +541,7 @@ function endHand(S) {
   if (S.table.length) {
     const w = S.lastCapturer ?? ((S.turn + 3) % 4);
     S.cap[team(w)] += S.table.length;
-    say(S, `${NAMES[w]} se lleva lo que queda en la mesa (${S.table.length}).`);
+    say(S, w === 0 ? L(`Te llevas lo que queda en la mesa (${S.table.length}).`, `T'endús el que queda al tapet (${S.table.length}).`) : L(`${NAMES[w]} se lleva lo que queda en la mesa (${S.table.length}).`, `${NAMES[w]} s'endú el que queda al tapet (${S.table.length}).`));
     S.table = [];
   }
   resolveDuels(S);
@@ -531,7 +551,7 @@ function endHand(S) {
   });
   S.score[0] += rows[0].cardPts; S.score[1] += rows[1].cardPts;
   S.summary = rows;
-  say(S, `Fin de la mano: Nosotros ${rows[0].cards} cartas, Ellos ${rows[1].cards}. Marcador ${S.score[0]}–${S.score[1]}.`, 'pts');
+  say(S, L(`Fin de la mano: Nosotros ${rows[0].cards} cartas, Ellos ${rows[1].cards}. Marcador ${S.score[0]}–${S.score[1]}.`, `Final de la mà: Nosaltres ${rows[0].cards} cartes, Ells ${rows[1].cards}. Marcador ${S.score[0]}–${S.score[1]}.`), 'pts');
   if (!S.over && (S.score[0] >= TARGET || S.score[1] >= TARGET) && S.score[0] !== S.score[1]) {
     S.over = true; S.winner = S.score[0] > S.score[1] ? 0 : 1;
   }
@@ -575,8 +595,9 @@ function evalPlay(S, p, cid) {
 /* Niveles: fácil (solo mira lo que gana ya, y a veces se equivoca),
    normal (lo que gana menos el riesgo de que el siguiente le haga bac o capture),
    difícil (imagina repartos posibles de las cartas ocultas y simula la vuelta entera) */
-let SETTINGS = { partner: 'dificil', rivals: 'normal', hints: false, labels: false, socarrat: false, speed: 1, deck: 'moderna' };
+let SETTINGS = { partner: 'experto', rivals: 'normal', hints: false, labels: false, socarrat: false, speed: 1, deck: 'moderna', lang: 'es', names: ['Toni','Maria','Vicent'] };
 try { Object.assign(SETTINGS, JSON.parse(localStorage.getItem('cau.settings') || '{}')); } catch (e) {}
+applyLang(SETTINGS.lang, SETTINGS.names);
 const levelOf = p => p === 2 ? SETTINGS.partner : SETTINGS.rivals;
 function botChooseBest(S, p) {
   let best = null, bv = -1e9;
@@ -632,10 +653,59 @@ function botChooseHard(S, p) {
   for (const c of cands) { const v = tot[c.id] / N + Math.random() * 0.01; if (v > bv) { bv = v; best = c.id; } }
   return best;
 }
+const LEVELDESC = () => L('Fácil: mira solo lo que gana en el momento y se equivoca a menudo. Normal: además calcula si el siguiente le puede hacer bac, aunque a veces se despista. Difícil: calcula en puntos (un bac vale más que las cartas) y no se despista. Muy difícil: se imagina 60 repartos posibles de las cartas que no ve y juega el reparto entero antes de decidir. Ninguno ve tus cartas.',
+  "Fàcil: només mira el que guanya en el moment i s'equivoca sovint. Normal: a més calcula si el següent li pot fer bac, encara que de vegades es despista. Difícil: calcula en punts (un bac val més que les cartes) i no es despista. Molt difícil: s'imagina 60 repartiments possibles de les cartes que no veu i juga el repartiment sencer abans de decidir. Cap no veu les teues cartes.");
+/* Difícil y muy difícil: cuentan en puntos de verdad. Una carta capturada vale medio punto
+   (los puntos son las cartas que pasan de 20) y un bac vale 2. Así lo midió el estudio de miles de manos. */
+const ptsValue = (S, t) => 0.5 * (S.cap[t] - S.cap[1 - t]) + (bonSum(S.bon[t]) - bonSum(S.bon[1 - t]));
+function evalPlayPts(S, p, cid) {
+  const sim = cloneLite(S), t = team(p);
+  const before = ptsValue(S, t); applyPlay(sim, p, cid); const gain = ptsValue(sim, t) - before;
+  const q = (p + 1) % 4, h = sim.hands[q].length; if (!h) return gain;
+  const unk = unknownFor(sim, p), U = unk.length; const P = r => probHas(U, unk.filter(c => c.r === r).length, h);
+  let risk = 0;
+  if (sim.chain && team(sim.chain.owner) === t) {
+    const r = sim.chain.r, n = sim.chain.cards.length + escLen(sim, r);
+    risk += P(r) * (n + 5 + (sim.chain.limpia ? 2 : 0));       // me hacen rebac: pierdo el bac, ellos 3 y las cartas cambian de lado
+  }
+  const lp = sim.lastPlay;
+  for (const c of sim.table) {
+    let v = 0.5 * (2 + escLen(sim, c.r));
+    if (lp && !lp.cap && lp.id === c.id) v += 2;
+    if (sim.table.length === 1) v += 1;
+    risk += P(c.r) * v;
+  }
+  return gain - 0.7 * risk;
+}
+function botChooseDificil(S, p) {
+  let best = null, bv = -1e9;
+  for (const c of S.hands[p]) { const v = evalPlayPts(S, p, c.id) + Math.random() * 0.01; if (v > bv) { bv = v; best = c.id; } }
+  return best;
+}
+// Muy difícil: imagina 60 repartos de las cartas que no ve y, para cada carta, juega el resto del reparto
+function botChooseExperto(S, p) {
+  const cands = S.hands[p]; if (cands.length === 1) return cands[0].id;
+  const t = team(p), N = 60, tot = {}; cands.forEach(c => tot[c.id] = 0);
+  for (let k = 0; k < N; k++) {
+    const det = determinize(S, p);
+    for (const c of cands) {
+      const sim = cloneLite(det); const v0 = ptsValue(sim, t);
+      applyPlay(sim, p, c.id); afterPlay(sim);
+      for (let st = 0; st < 12; st++) {
+        if (sim.over || sim.phase !== 'play' || sim.round !== det.round || !sim.hands[sim.turn].length) break;
+        const q = sim.turn; applyPlay(sim, q, botChooseDificil(sim, q)); afterPlay(sim);
+      }
+      tot[c.id] += ptsValue(sim, t) - v0;
+    }
+  }
+  let best = null, bv = -1e9; for (const c of cands) { const v = tot[c.id] + Math.random() * 1e-3; if (v > bv) { bv = v; best = c.id; } }
+  return best;
+}
 function botChoose(S, p) {
   const l = levelOf(p);
   if (l === 'facil') return botChooseEasy(S, p);
-  if (l === 'dificil') return botChooseHard(S, p);
+  if (l === 'dificil') return botChooseDificil(S, p);
+  if (l === 'experto') return botChooseExperto(S, p);
   return botChooseNormal(S, p);
 }
 // El bot canta si puede. Devuelve true si ha cantado.
@@ -675,13 +745,13 @@ function botBet(S) {
   const behind = S.score[1 - t] - S.score[t];
   // P = probabilidad estimada de tener la jugada más alta
   let P;
-  if (lvl === 'dificil') P = nitWinProb(S, sp);
+  if ((lvl === 'dificil' || lvl === 'experto')) P = nitWinProb(S, sp);
   else { const c = S.sung[sp]; const st = c ? c.t * 10 + c.r : 10; P = Math.min(0.95, Math.max(0.1, (st - 8) / 16)); if (lvl === 'facil') P = Math.min(0.95, Math.max(0.05, P + (R - 0.5) * 0.6)); }
   let a;
   if (!b.pending) {
     // el primero que habla dice como mínimo xic
     if (lvl === 'facil' && R < 0.08) a = 'pass';
-    else if (P > 0.88 && (lvl === 'dificil' ? R < 0.4 : R < 0.2) && b.acc === 0) a = 'falta';
+    else if (P > 0.88 && ((lvl === 'dificil' || lvl === 'experto') ? R < 0.4 : R < 0.2) && b.acc === 0) a = 'falta';
     else if (P > 0.62) a = 'envit';
     else a = 'xic';
   } else if (b.pending.falta) {
@@ -690,7 +760,7 @@ function botBet(S) {
     // a un xic se contesta xac: pasar daría el punto igualmente
     a = P > 0.75 ? 'envit' : 'xac';
   } else {
-    a = (P > 0.8 && b.acc < 6) ? 'torne' : P > (lvl === 'dificil' ? 0.45 : 0.5) ? 'vull' : 'novull';
+    a = (P > 0.8 && b.acc < 6) ? 'torne' : P > ((lvl === 'dificil' || lvl === 'experto') ? 0.45 : 0.5) ? 'vull' : 'novull';
   }
   betAct(S, t, a);
 }
@@ -739,7 +809,7 @@ function save() { try { localStorage.setItem('cau.v2', JSON.stringify(S)); } cat
 function load() { try { const s = JSON.parse(localStorage.getItem('cau.v2') || 'null'); return s && s.hands ? s : null; } catch (e) { return null; } }
 
 function cardHTML(c, cls = '') {
-  const lbl = `${RN[c.r]} de ${SUITN[c.s]}`;
+  const lbl = `${RN[c.r]} ${ofSuit(c.s)}`;
   if (SETTINGS.deck === 'clasica') return `<div class="card cl ${cls}" role="img" aria-label="${lbl}" style="background-position:${(c.r / 9 * 100).toFixed(3)}% ${(c.s / 4 * 100).toFixed(3)}%"></div>`;
   return `<div class="card ${cls}" role="img" aria-label="${lbl}">${cardSVG(c)}</div>`;
 }
@@ -749,9 +819,9 @@ function renderSeat(p) {
   const n = dealView ? dealView.n[p] : S.hands[p].length - (fx && fx.p === p ? 1 : 0);
   const backs = Array.from({ length: n }, () => '<span class="back"></span>').join('');
   el.className = 'seat ' + (p === 2 ? 'top' : 'side') + ((S.phase === 'play' || S.phase === 'nit') && S.turn === p ? ' turn' : '');
-  const dealer = S.dealer === p ? '<span class="dealer">Reparte</span>' : '';
-  const role = p === 2 ? 'Compañera' : 'Rival';
-  el.innerHTML = `<div class="av ${team(p) === 0 ? 'us' : ''}">${NAMES[p][0]}</div><div class="who"><span class="nm">${NAMES[p]}</span><span class="sub">${role}</span>${dealer}</div><div class="backs" aria-label="${n} cartas">${backs}</div><div class="bubble">${(SETTINGS.labels || /^De nit/.test(S.bubbles[p] || '')) ? (S.bubbles[p] || '') : ''}</div>`;
+  const dealer = S.dealer === p ? `<span class="dealer">${L('Reparte', 'Reparteix')}</span>` : '';
+  const role = p === 2 ? L('Compañera', 'Companya') : 'Rival';
+  el.innerHTML = `<div class="av ${team(p) === 0 ? 'us' : ''}">${NAMES[p][0]}</div><div class="who"><span class="nm">${NAMES[p]}</span><span class="sub">${role}</span>${dealer}</div><div class="backs" aria-label="${n} ${L('cartas', 'cartes')}">${backs}</div><div class="bubble">${(SETTINGS.labels || /^De nit/.test(S.bubbles[p] || '')) ? (S.bubbles[p] || '') : ''}</div>`;
 }
 
 let dealView = null;   // durante la animación de reparto: cuántas cartas se ven ya
@@ -782,7 +852,7 @@ function renderTable() {
   }).join('');
   if (S.chain) html += slotHTML(S.chain.slot, stacked(S.chain.cards.map(c => cardHTML(c, cls(c))).concat(inChain ? [inc] : [])));
   if (fx && !inChain && !match) html += slotHTML(fx.slot || { i: 4, dx: 0, dy: 0, rot: 0 }, inc);
-  $('table').innerHTML = html || '<span class="empty">Mesa vacía</span>';
+  $('table').innerHTML = html || `<span class="empty">${L('Mesa vacía', 'Tapet buit')}</span>`;
 }
 
 function hintFor(cid) {
@@ -791,12 +861,12 @@ function hintFor(cid) {
   const sp = res.ev.find(e => ['sv','rebac','bac'].includes(e.k));
   if (sp) return [`${sp.txt.replace(/[¡!]/g, '')} +${sp.pts}`, 'big'];
   const cap = res.ev.find(e => e.k === 'cap');
-  if (cap) return [`Captura ${cap.n}${k.includes('limpia') && !k.includes('cobra') ? ' · Limpia' : ''}`, k.includes('limpia') ? 'big' : 'cap'];
-  return ['Se queda', ''];
+  if (cap) return [`${L('Captura', 'Arreplega')} ${cap.n}${k.includes('limpia') && !k.includes('cobra') ? ' · Limpia' : ''}`, k.includes('limpia') ? 'big' : 'cap'];
+  return [L('Se queda', 'Es queda'), ''];
 }
 
 function humanSpeaks(S) { return S.phase === 'nit' && S.bet && S.bet.turnTeam === 0 && !!S.sung[0]; }
-function speakerName(S) { const t = S.bet.turnTeam; const ps = [t, t + 2].filter(p => S.sung[p]); return ps.map(p => NAMES[p]).join(' y '); }
+function speakerName(S) { const t = S.bet.turnTeam; const ps = [t, t + 2].filter(p => S.sung[p]); return ps.map(p => NAMES[p]).join(L(' y ', ' i ')); }
 function myTurn() { return S.phase === 'play' && S.turn === 0 && !busy && !fx && !S.over; }
 
 function renderHand() {
@@ -810,29 +880,29 @@ function renderHand() {
 function renderBottom() {
   const el = $('bottom');
   if ((S.phase === 'singLast' || S.phase === 'singResp') && !busy) {
-    const head = S.phase === 'singLast' ? 'Último reparto' : `${NAMES[S.singer]} ha cantado de nit`;
-    const why = S.phase === 'singLast' ? 'En el último reparto se canta al principio.' : 'Si tú también tienes, lo dices ahora.';
-    el.innerHTML = `<div class="nit"><h3>${head}</h3><p>Tienes ${comboTxt(S.dealCombos[0])}. ${why}</p><div class="acts"><button class="btn sing" type="button" data-sing="resp">Cantar de nit</button><button class="btn" type="button" data-sing="skip">No cantar</button></div></div>`;
+    const head = S.phase === 'singLast' ? L('Último reparto', 'Últim repartiment') : L(`${NAMES[S.singer]} ha cantado de nit`, `${NAMES[S.singer]} ha cantat de nit`);
+    const why = S.phase === 'singLast' ? L('En el último reparto se canta al principio.', "En l'últim repartiment es canta al principi.") : L('Si tú también tienes, lo dices ahora.', 'Si tu també en tens, ho dius ara.');
+    el.innerHTML = `<div class="nit"><h3>${head}</h3><p>${L('Tienes', 'Tens')} ${comboTxt(S.dealCombos[0])}. ${why}</p><div class="acts"><button class="btn sing" type="button" data-sing="resp">Cantar de nit</button><button class="btn" type="button" data-sing="skip">No cantar</button></div></div>`;
     return;
   }
   if (humanSpeaks(S) && !busy) {
     const b = S.bet; const my = S.sung[0];
     const opts = betOptions(S);
-    let line = b.acc ? `Ya hay <b>${b.acc}</b> en juego.` : `Solo se cobra lo que se apueste.`;
-    if (b.pending) line = b.pending.falta ? `Ellos se juegan <b>la partida</b>.` : b.pending.kind === 'xic' ? `Ellos dicen <b>xic</b> (1 punto).` : `Ellos ${b.pending.kind === 'torne' ? 'vuelven a envidar' : 'envidan'}: se juegan <b>${b.pending.total}</b>.`;
-    const mineTxt = `Tienes ${comboTxt(my)}${S.sung[2] ? ' y Maria también ha cantado' : ''}.`;
-    el.innerHTML = `<div class="nit"><h3>Se habla el de nit</h3><p>${mineTxt} ${line}</p><div class="acts">${opts.map(o => `<button class="btn ${['vull','xac','envit','xic'].includes(o) ? 'primary' : ''} ${o === 'falta' ? 'warn' : ''}" type="button" data-bet="${o}">${o === 'novull' && b.pending && b.pending.kind === 'xic' ? 'Passe (ellos ganan 1)' : BETL[o]}</button>`).join('')}</div></div>`;
+    let line = b.acc ? L(`Ya hay <b>${b.acc}</b> en juego.`, `Ja hi ha <b>${b.acc}</b> en joc.`) : L('Solo se cobra lo que se apueste.', "Només es cobra el que s'aposte.");
+    if (b.pending) line = b.pending.falta ? L('Ellos se juegan <b>la partida</b>.', 'Ells es juguen <b>la partida</b>.') : b.pending.kind === 'xic' ? L('Ellos dicen <b>xic</b> (1 punto).', 'Ells diuen <b>xic</b> (1 punt).') : (b.pending.kind === 'torne' ? L('Ellos vuelven a envidar', 'Ells tornen a envidar') : L('Ellos envidan', 'Ells envíden')) + L(`: se juegan <b>${b.pending.total}</b>.`, `: es juguen <b>${b.pending.total}</b>.`);
+    const mineTxt = `${L('Tienes', 'Tens')} ${comboTxt(my)}${S.sung[2] ? L(` y ${NAMES[2]} también ha cantado`, ` i ${NAMES[2]} també ha cantat`) : ''}.`;
+    el.innerHTML = `<div class="nit"><h3>${L('Se habla el de nit', 'Es parla el de nit')}</h3><p>${mineTxt} ${line}</p><div class="acts">${opts.map(o => `<button class="btn ${['vull','xac','envit','xic'].includes(o) ? 'primary' : ''} ${o === 'falta' ? 'warn' : ''}" type="button" data-bet="${o}">${o === 'novull' && b.pending && b.pending.kind === 'xic' ? BETL('pass') : BETL(o)}</button>`).join('')}</div></div>`;
     return;
   }
   let txt = '', btn = '';
-  if (dealView) txt = `Reparte <b>${NAMES[S.dealer]}</b>…`;
+  if (dealView) txt = `${L('Reparte', 'Reparteix')} <b>${NAMES[S.dealer]}</b>…`;
   else if (S.phase === 'play' && !fx) {
     if (S.turn === 0 && !busy) {
-      txt = '<b>Te toca.</b> Elige una carta.';
+      txt = L('<b>Te toca.</b> Elige una carta.', '<b>Et toca.</b> Tria una carta.');
       if (canFirst(S, 0)) btn = `<button class="btn sing" type="button" data-sing="first">Cantar de nit</button>`;
-      else if (canSecond(S, 0)) btn = `<button class="btn sing" type="button" data-sing="second">Cantar de nit otra vez</button>`;
-    } else txt = `Juega <b>${NAMES[S.turn]}</b>…`;
-  } else if (S.phase === 'nit' && S.bet) txt = `Habla el de nit <b>${speakerName(S)}</b>…`;
+      else if (canSecond(S, 0)) btn = `<button class="btn sing" type="button" data-sing="second">${L('Cantar de nit otra vez', 'Tornar a cantar de nit')}</button>`;
+    } else txt = `${L('Juega', 'Juga')} <b>${NAMES[S.turn]}</b>…`;
+  } else if (S.phase === 'nit' && S.bet) txt = `${L('Habla el de nit', 'Parla el de nit')} <b>${speakerName(S)}</b>…`;
   el.innerHTML = `<div class="status ${S.turn === 0 && S.phase === 'play' ? 'mine' : ''}"><span>${txt}</span>${btn}</div>`;
 }
 
@@ -844,7 +914,9 @@ function renderScore(i) {
 function render() {
   document.body.classList.toggle('deck-clasica', SETTINGS.deck === 'clasica');
   renderScore(0); renderScore(1);
-  $('info').textContent = `Mano ${S.handNo} · Reparto ${Math.max(1, S.round)}/3 · Mazo ${S.deck.length}`;
+  $('info').textContent = L(`Mano ${S.handNo} · Reparto ${Math.max(1, S.round)}/3 · Mazo ${S.deck.length}`, `Mà ${S.handNo} · Repartiment ${Math.max(1, S.round)}/3 · Baralla ${S.deck.length}`);
+  $('lbl0').textContent = TEAMN[0]; $('lbl1').textContent = TEAMN[1];
+  $('btnRules').textContent = L('Reglas', 'Regles'); document.documentElement.lang = LANG === 'va' ? 'ca' : 'es';
   [1,2,3].forEach(renderSeat);
   renderTable(); renderHand(); renderBottom();
   $('narr').innerHTML = narr;
@@ -865,7 +937,7 @@ async function drainFeed(untilDeal) {
   if (untilDeal) { const k = S.feed.findIndex(i => i.k === 'hand'); if (k >= 0) n = k + 1; }
   const items = S.feed.splice(0, n);
   for (const i of items) {
-    if (i.k === 'sing') { narr = i.txt; render(); await callout('De nit', /^(Cantas|Vuelves)/.test(i.txt) ? 'Tú' : i.txt.split(' ')[0]); }
+    if (i.k === 'sing') { narr = i.txt; render(); await callout('De nit', /^(Cantas|Vuelves|Cantes|Tornes)/.test(i.txt) ? NAMES[0] : i.txt.split(' ')[0]); }
     else if (i.k === 'nit' || i.k === 'pts') { narr = i.txt; render(); await sleep(1100); }
     else if (i.k === 'duel') { narr = i.txt; render(); await callout('De nit', i.txt.split('. ').slice(-1)[0].replace('.', '')); await sleep(1200); }
   }
@@ -879,18 +951,16 @@ async function doPlay(p, cid) {
   const slot = sim.slots[res.card.id] && sim.table.some(c => c.id === res.card.id) ? sim.slots[res.card.id] : null;
   fx = { card: res.card, take: [], p, slot };
   S.bubbles[p] = '';
-  narr = `<b>${NAMES[p]}</b> ${p === 0 ? 'juegas' : 'juega'} ${cardName(res.card)}.`;
+  narr = `<b>${NAMES[p]}</b> ${p === 0 ? L('juegas', 'jugues') : L('juega', 'juga')} ${cardName(res.card)}.`;
   render();
   await sleep(900);
   // 2) se marcan las cartas que se lleva
   const cap = res.ev.find(e => e.k === 'cap'), cobra = res.ev.find(e => e.k === 'cobra');
-  let what = special ? special.txt.replace(/[¡!]/g, '') : cap ? `captura ${cap.n} cartas` : 'se queda en la mesa';
-  if (cobra && !special) what = `${cobra.txt.toLowerCase()} — ${what}`;
   if (res.take.length || special) {
     const glow = special && ['bac','rebac','sv'].includes(special.k) && sim.chain ? sim.chain.cards.map(c => c.id) : [];
     fx = { card: res.card, take: res.take, p, slot, glow };
     const who = special ? special.p : p;
-    narr = `${cobra ? cobra.txt + '. ' : ''}${special ? `<b>${NAMES[who]}</b>: <b>${special.txt}</b> +${special.pts}` : cap ? `<b>${NAMES[p]}</b> captura ${cap.n} cartas.` : ''}`;
+    narr = `${cobra ? cobra.txt + '. ' : ''}${special ? `<b>${NAMES[who]}</b>: <b>${special.txt}</b> +${special.pts}` : cap ? `<b>${NAMES[p]}</b> ${L(`captura ${cap.n} cartas.`, `arreplega ${cap.n} cartes.`)}` : ''}`;
     render();
     if (special) await callout(special.txt, `${NAMES[who]} · +${special.pts}`);
     else await sleep(1100);
@@ -898,14 +968,14 @@ async function doPlay(p, cid) {
   fx = null;
   sim.bubbles[p] = cap ? cap.txt : '';
   if (special) sim.bubbles[special.p] = special.txt.replace(/[¡!]/g, '');
-  say(sim, `${p === 0 ? 'Juegas' : NAMES[p] + ' juega'} ${cardName(res.card)} — ${res.ev.map(e => e.txt).join(' · ')}.`);
+  say(sim, `${p === 0 ? L('Juegas', 'Jugues') : NAMES[p] + L(' juega', ' juga')} ${cardName(res.card)} — ${res.ev.map(e => e.txt).join(' · ')}.`);
   const roundBefore = sim.round;
   afterPlay(sim);
   if (sim.round !== roundBefore && sim.phase !== 'handEnd') sim.bubbles = sim.bubbles.map((b, i) => sim.sung && sim.sung[i] ? b : '');
   S = sim;
   if (S.round !== roundBefore && S.phase !== 'handEnd' && S.phase !== 'gameEnd') {
     render(); await drainFeed(true);
-    narr = `Reparto ${S.round} de 3.`;
+    narr = L(`Reparto ${S.round} de 3.`, `Repartiment ${S.round} de 3.`);
     await animateDeal(false);
   }
   render();
@@ -934,8 +1004,8 @@ async function animateDeal(withTable) {
       await fly([ox, oy], slotXY(st.slot));
       if (st.pixat) {
         dealView.temp = { card: st.card, slot: st.slot }; renderTable();
-        narr = `<b>S'ha pixat:</b> ${RNA[st.card.r]} ya estaba en el tapete. Vuelve al mazo.`; $('narr').innerHTML = narr;
-        await callout("S'ha pixat", SETTINGS.socarrat ? `${TEAMN[1 - team(S.dealer)]} · +1` : `${RN[st.card.r]} repetido`);
+        narr = L(`<b>S'ha pixat:</b> ${RNA[st.card.r]} ya estaba en el tapete. Vuelve al mazo.`, `<b>S'ha pixat:</b> ${RNA[st.card.r]} ja estava al tapet. Torna a la baralla.`); $('narr').innerHTML = narr;
+        await callout("S'ha pixat", SETTINGS.socarrat ? `${TEAMN[1 - team(S.dealer)]} · +1` : `${RN[st.card.r]} ${L('repetido', 'repetit')}`);
         dealView.temp = null; renderTable();
         await fly(slotXY(st.slot), [ox, oy]);
       } else { dealView.tableIds.add(st.card.id); renderTable(); }
@@ -981,68 +1051,87 @@ async function loop() {
 function showPanel(html) { $('panel').classList.remove('menu'); $('panel').innerHTML = html; $('overlay').hidden = false; const f = $('panel').querySelector('button'); if (f) f.focus(); }
 function closePanel() { $('overlay').hidden = true; }
 
+const winTitle = () => S.winner === 0 ? L('¡Habéis ganado la partida!', 'Heu guanyat la partida!') : L('Han ganado la partida ellos', 'Han guanyat la partida ells');
 function scoreLine(i) { const [n, w] = scoreTxt(S.score[i]); return `${n} ${w}`; }
 
 function showSummary() {
   if (S.phase === 'gameEnd') {
-    const why = 'Han llegado a 40 durante la mano.';
-    showPanel(`<h2>${S.winner === 0 ? '¡Habéis ganado la partida!' : 'Han ganado la partida ellos'}</h2><p class="big-result">${why}</p><p style="text-align:center">Nosotros ${scoreLine(0)} · Ellos ${scoreLine(1)}</p><div class="acts"><button class="btn primary" type="button" data-act="newgame">Nueva partida</button></div>`);
+    const why = S.endFalta ? L('Se la han jugado en el de nit.', "S'ho han jugat en el de nit.") : L('Han llegado a 40 durante la mano.', 'Han arribat a 40 durant la mà.');
+    showPanel(`<h2>${winTitle()}</h2><p class="big-result">${why}</p><p style="text-align:center">${TEAMN[0]} ${scoreLine(0)} · ${TEAMN[1]} ${scoreLine(1)}</p><div class="acts"><button class="btn primary" type="button" data-act="newgame">${L('Nueva partida', 'Partida nova')}</button></div>`);
     return;
   }
   const R = S.summary; if (!R) return;
   const row = (l, k) => `<tr><td>${l}</td><td>${R[0][k]}</td><td>${R[1][k]}</td></tr>`;
-  const title = S.over ? (S.winner === 0 ? '¡Habéis ganado la partida!' : 'Han ganado la partida ellos') : `Fin de la mano ${S.handNo}`;
+  const title = S.over ? winTitle() : L(`Fin de la mano ${S.handNo}`, `Final de la mà ${S.handNo}`);
   showPanel(`<h2>${title}</h2>
-  <table class="sum"><thead><tr><th></th><th class="us">Nosotros</th><th class="them">Ellos</th></tr></thead><tbody>
-  ${row('Cartas', 'cards')}${row('Puntos por cartas (más de 20)', 'cardPts')}${row('Bac', 'bac')}${row('Rebac', 'rebac')}${row('Sant Vicent', 'sv')}${row('Limpia', 'limpia')}${row('De nit', 'nit')}${(R[0].pixat || R[1].pixat) ? row("S'ha pixat", 'pixat') : ''}
-  <tr class="tot"><td>Total de la mano</td><td>${R[0].total}</td><td>${R[1].total}</td></tr>
+  <table class="sum"><thead><tr><th></th><th class="us">${TEAMN[0]}</th><th class="them">${TEAMN[1]}</th></tr></thead><tbody>
+  ${row(L('Cartas', 'Cartes'), 'cards')}${row(L('Puntos por cartas (más de 20)', 'Punts per cartes (més de 20)'), 'cardPts')}${row('Bac', 'bac')}${row('Rebac', 'rebac')}${row('Sant Vicent', 'sv')}${row('Limpia', 'limpia')}${row('De nit', 'nit')}${(R[0].pixat || R[1].pixat) ? row("S'ha pixat", 'pixat') : ''}
+  <tr class="tot"><td>${L('Total de la mano', 'Total de la mà')}</td><td>${R[0].total}</td><td>${R[1].total}</td></tr>
   <tr class="tot"><td>Marcador</td><td>${scoreLine(0)}</td><td>${scoreLine(1)}</td></tr></tbody></table>
   ${(S.duelNotes || []).map(t => `<p>${t}</p>`).join('')}
-  <div class="acts">${S.over ? '<button class="btn primary" type="button" data-act="newgame">Nueva partida</button>' : '<button class="btn primary" type="button" data-act="nexthand">Siguiente mano</button>'}</div>`);
+  <div class="acts">${S.over ? `<button class="btn primary" type="button" data-act="newgame">${L('Nueva partida', 'Partida nova')}</button>` : `<button class="btn primary" type="button" data-act="nexthand">${L('Siguiente mano', 'Mà següent')}</button>`}</div>`);
 }
 
 function showRules() {
-  showPanel(`<h2>Reglas del Cau</h2>
+  const close = `<div class="acts"><button class="btn primary" type="button" data-act="close">${L('Cerrar', 'Tancar')}</button></div>`;
+  showPanel((LANG === 'va' ? `<h2>Regles del Cau</h2>
+  <p>Quatre jugadors en dues parelles, baralla espanyola de 40 cartes. Es juga cap a la dreta. Només compta el número, mai el pal.</p>
+  <h3>Repartiment</h3><ul><li>Una carta al centre, una a cada jugador, una altra al centre… fins que n'hi ha 4 al tapet i 3 a cadascú.</li><li>Si al tapet es repeteix un número, «s'ha pixat»: la repetida torna a la baralla, es barreja i n'ix una altra.</li><li>Quan ningú té cartes es reparteixen 3 més. Hi ha 3 repartiments per mà i cada repartiment comença jugada nova.</li></ul>
+  <h3>Jugar</h3><ul><li>Si la teua carta té el mateix número que una del tapet, l'arreplegues.</li><li>Escala: t'endús també les cartes següents que hi haja al tapet (5 → 6 → 7 → sota → cavall → rei).</li><li>Si no arreplegues, la carta es queda al tapet.</li></ul>
+  <h3>Jugades especials</h3>
+  <div class="pts"><div><b>Bac · 2</b><span>Mates la carta que acaba de deixar el jugador anterior.</span></div><div><b>Rebac · 3</b><span>El següent mata el bac: el bac perd els seus 2 punts.</span></div><div><b>Sant Vicent · 4</b><span>La quarta carta mata el rebac: el rebac perd els seus 3.</span></div><div><b>Limpia · 1</b><span>Deixes el tapet buit.</span></div></div>
+  <p>El bac queda pendent al tapet fins que juga el següent. Si fa rebac, l'escala és per a ell. Si el bac deixa el tapet buit també és limpia (3 punts), i si li fan rebac la limpia passa al que el fa. L'última jugada de la mà no fa limpia.</p>
+  <h3>De nit</h3><ul><li>Amb parella a la mà, cantes «de nit» en el teu torn, abans de jugar. Has de prémer el botó; si jugues sense cantar, el perds.</li><li>Amb rondí (trio), si ningú et discuteix el de nit, tornes a cantar quan et queden dues cartes: un altre punt.</li><li>Quan algú canta, els altres que també en tenen ho diuen en eixe moment. En l'últim repartiment canten tots al principi.</li><li>Si només canta una parella, s'apunta 1 per cada cant (tu i la teua companya, 2).</li><li>Si canten les dues parelles, els punts dels cants es perden i només parlen els que han cantat, començant per la dreta del que reparteix: <b>xic</b> (1), <b>xac</b> (l'acceptes), <b>envide</b> (2), <b>torne a envidar</b> (2 més) o <b>la partida</b>. Es cobra només el que s'aposta.</li><li>Si el primer que parla passa, l'altra parella guanya 1. Si no es vol una aposta (o es passa a un xic), el que ha apostat cobra el que ja estava acceptat, com a mínim 1. Mai poden passar els dos.</li><li>Qui guanya el de nit parlat no se sap fins que acaba eixe repartiment.</li><li>Guanya la jugada més alta: rondí a parella, i entre iguals la més alta (rei > cavall > sota > 7 … > as). Si empaten, guanya qui és mà.</li></ul>
+  <h3>Punts</h3><ul><li>Es juga a 40: els primers 20 són «males» i els 20 següents, «bones». Guanya qui arriba a 40, en el moment en què hi arriba.</li><li>Al final de cada mà, qui arreplega l'últim s'endú el que queda al tapet (no és limpia), i cada parella suma un punt per cada carta que passe de 20.</li><li>Sóc socarrat (opcional): cada vegada que s'ha pixat, la parella que no reparteix s'apunta un punt.</li></ul>
+  <h3>Dubtes pendents</h3><ul><li>Si dos de nit són iguals (per exemple, parella de cincs contra parella de cincs), ara guanya qui és mà.</li><li>Si us jugueu la partida en el de nit i una parella arriba a 40 abans d'acabar la mà, ara guanya eixa parella i el de nit no es mira.</li></ul>
+  ` : `<h2>Reglas del Cau</h2>
   <p>Cuatro jugadores en dos parejas, baraja española de 40 cartas. Se juega hacia la derecha. Solo cuenta el número, nunca el palo.</p>
-  <h3>Reparto</h3><ul><li>3 cartas a cada uno y 4 a la mesa, todas de números distintos (si se repite una, se cambia).</li><li>Cuando nadie tiene cartas se reparten otras 3. Hay 3 repartos por mano y cada reparto empieza jugada nueva.</li></ul>
+  <h3>Reparto</h3><ul><li>Una carta al centro, una a cada jugador, otra al centro… hasta tener 4 en el tapete y 3 cada uno.</li><li>Si en el tapete se repite un número, «s'ha pixat»: la repetida vuelve al mazo, se baraja y sale otra.</li><li>Cuando nadie tiene cartas se reparten otras 3. Hay 3 repartos por mano y cada reparto empieza jugada nueva.</li></ul>
   <h3>Jugar</h3><ul><li>Si tu carta tiene el mismo número que una de la mesa, la capturas.</li><li>Escala: te llevas también las cartas siguientes que haya en la mesa (5 → 6 → 7 → sota → caballo → rey).</li><li>Si no capturas, tu carta se queda en la mesa.</li></ul>
   <h3>Jugadas especiales</h3>
   <div class="pts"><div><b>Bac · 2</b><span>Matas la carta que acaba de dejar el jugador anterior.</span></div><div><b>Rebac · 3</b><span>El siguiente mata el bac: el bac pierde sus 2 puntos.</span></div><div><b>Sant Vicent · 4</b><span>La cuarta carta mata el rebac: el rebac pierde sus 3.</span></div><div><b>Limpia · 1</b><span>Dejas la mesa vacía.</span></div></div>
-  <p>El bac queda pendiente en la mesa hasta que juega el siguiente. Si hace rebac, la escala es para él. Si el bac deja la mesa vacía también es limpia (3 puntos), y si le hacen rebac la limpia pasa al que lo hace.</p>
-  <h3>De nit</h3><ul><li>Con pareja en la mano, cantas «de nit» en tu turno, antes de jugar. Tienes que pulsar el botón; si juegas sin cantar, lo pierdes.</li><li>Con rondín (trío), si nadie te discute el de nit, vuelves a cantar cuando te quedan dos cartas: otro punto.</li><li>Cuando alguien canta, los demás que también tienen lo dicen en ese momento. En el último reparto cantan todos al principio.</li><li>Si solo canta una pareja, se apunta 1 por cada canto (tú y tu compañera, 2).</li><li>Si cantan las dos parejas, los puntos de los cantos se pierden y solo hablan los que han cantado: <b>xic</b> (1), <b>xac</b> (lo aceptas), <b>envide</b> (2), <b>torne a envidar</b> (+2) o <b>la partida</b>. Se cobra solo lo apostado.</li><li>Si el primero que habla pasa, la otra pareja gana 1. Si no se quiere una apuesta (o se pasa a un xic), el que apostó cobra lo que ya estaba aceptado, como mínimo 1. Nunca pueden pasar los dos.</li><li>Quién gana el de nit hablado no se sabe hasta que acaba ese reparto.</li><li>Gana la jugada más alta: rondín a pareja, y entre iguales la más alta (rey > caballo > sota > 7 … > as). Si empatan, gana quien es mano.</li></ul>
-  <h3>Puntos</h3><ul><li>Se juega a 40: los primeros 20 son «malas» y los siguientes 20, «buenas». Gana quien llega a 40, en el momento en que llega.</li><li>Al final de cada mano, quien captura el último se lleva lo que queda en la mesa (no es limpia), y cada pareja suma un punto por cada carta que pase de 20.</li></ul>
+  <p>El bac queda pendiente en la mesa hasta que juega el siguiente. Si hace rebac, la escala es para él. Si el bac deja la mesa vacía también es limpia (3 puntos), y si le hacen rebac la limpia pasa al que lo hace. La última jugada de la mano no hace limpia.</p>
+  <h3>De nit</h3><ul><li>Con pareja en la mano, cantas «de nit» en tu turno, antes de jugar. Tienes que pulsar el botón; si juegas sin cantar, lo pierdes.</li><li>Con rondín (trío), si nadie te discute el de nit, vuelves a cantar cuando te quedan dos cartas: otro punto.</li><li>Cuando alguien canta, los demás que también tienen lo dicen en ese momento. En el último reparto cantan todos al principio.</li><li>Si solo canta una pareja, se apunta 1 por cada canto (tú y tu compañera, 2).</li><li>Si cantan las dos parejas, los puntos de los cantos se pierden y solo hablan los que han cantado, empezando por la derecha de quien reparte: <b>xic</b> (1), <b>xac</b> (lo aceptas), <b>envide</b> (2), <b>torne a envidar</b> (2 más) o <b>la partida</b>. Se cobra solo lo apostado.</li><li>Si el primero que habla pasa, la otra pareja gana 1. Si no se quiere una apuesta (o se pasa a un xic), el que apostó cobra lo que ya estaba aceptado, como mínimo 1. Nunca pueden pasar los dos.</li><li>Quién gana el de nit hablado no se sabe hasta que acaba ese reparto.</li><li>Gana la jugada más alta: rondín a pareja, y entre iguales la más alta (rey > caballo > sota > 7 … > as). Si empatan, gana quien es mano.</li></ul>
+  <h3>Puntos</h3><ul><li>Se juega a 40: los primeros 20 son «malas» y los siguientes 20, «buenas». Gana quien llega a 40, en el momento en que llega.</li><li>Al final de cada mano, quien captura el último se lleva lo que queda en la mesa (no es limpia), y cada pareja suma un punto por cada carta que pase de 20.</li><li>Sóc socarrat (opcional): cada vez que s'ha pixat, la pareja que no reparte se apunta un punto.</li></ul>
   <h3>Dudas pendientes</h3><ul><li>Si dos de nit son iguales (por ejemplo, pareja de cincos contra pareja de cincos), ahora gana quien es mano.</li><li>Si os jugáis la partida en el de nit y una pareja llega a 40 antes de acabar la mano, ahora gana esa pareja y el de nit no se mira.</li></ul>
-  <div class="acts"><button class="btn primary" type="button" data-act="close">Cerrar</button></div>`);
+  `) + close);
 }
 
 function showLog() {
   const items = S.log.slice(-150).reverse().map(l => `<li class="${l.k === 'hand' ? 'hand' : ''}">${l.txt}</li>`).join('');
-  showPanel(`<h2>Historial</h2><ul class="log">${items}</ul><div class="acts"><button class="btn primary" type="button" data-act="close">Cerrar</button></div>`);
+  showPanel(`<h2>Historial</h2><ul class="log">${items}</ul><div class="acts"><button class="btn primary" type="button" data-act="close">${L('Cerrar', 'Tancar')}</button></div>`);
 }
 
 let hasSaved = false, panelBack = null;
-const LVL = [['facil','Fácil'],['normal','Normal'],['dificil','Difícil']];
-const seg = (key, opts, cur, two) => `<div class="seg ${two ? 'two' : ''}" role="group">${opts.map(([v, l]) => `<button type="button" data-set="${key}" data-val="${v}" aria-pressed="${String(cur) === String(v)}">${l}</button>`).join('')}</div>`;
+const LVL = () => [['facil', L('Fácil', 'Fàcil')], ['normal', 'Normal'], ['dificil', 'Difícil'], ['experto', L('Muy difícil', 'Molt difícil')]];
+const seg = (key, opts, cur, two) => `<div class="seg ${two ? 'two' : ''} ${opts.length === 4 ? 'four' : ''}" role="group">${opts.map(([v, l]) => `<button type="button" data-set="${key}" data-val="${v}" aria-pressed="${String(cur) === String(v)}">${l}</button>`).join('')}</div>`;
 function showMenu() {
   panelBack = null;
-  const cont = hasSaved && S && !S.over ? `<button class="btn primary" type="button" data-act="continue">Continuar partida</button>` : '';
-  showPanel(`<div class="menu" style="display:flex;flex-direction:column;gap:14px"><div class="logo">Cau</div><p class="tag">El joc de cartes de les filaes d'Alcoi</p><div class="stack">${cont}<button class="btn ${cont ? '' : 'primary'}" type="button" data-act="newgame">Nueva partida</button><button class="btn" type="button" data-act="settings">Ajustes</button><button class="btn" type="button" data-act="rules">Reglas</button></div></div>`);
+  const cont = hasSaved && S && !S.over ? `<button class="btn primary" type="button" data-act="continue">${L('Continuar partida', 'Continuar la partida')}</button>` : '';
+  showPanel(`<div class="menu" style="display:flex;flex-direction:column;gap:14px"><div class="logo">Cau</div><p class="tag">El joc de cartes de les filaes d'Alcoi</p><div class="stack">${cont}<button class="btn ${cont ? '' : 'primary'}" type="button" data-act="newgame">${L('Nueva partida', 'Partida nova')}</button><button class="btn" type="button" data-act="settings">${L('Ajustes', 'Ajustos')}</button><button class="btn" type="button" data-act="rules">${L('Reglas', 'Regles')}</button></div></div>`);
   $('panel').classList.add('menu');
 }
 function showSettings() {
   panelBack = 'menu';
-  showPanel(`<h2>Ajustes</h2>
-  <div class="opt"><label>Tu compañera (Maria)</label>${seg('partner', LVL, SETTINGS.partner)}</div>
-  <div class="opt"><label>Rivales (Toni y Vicent)</label>${seg('rivals', LVL, SETTINGS.rivals)}</div>
-  <p class="desc" style="font-size:13px;color:var(--ink-soft)">Fácil: mira solo lo que gana en el momento y se equivoca a menudo. Normal: además calcula si el siguiente le puede hacer bac, aunque a veces se despista. Difícil: se imagina repartos posibles de las cartas que no ve y simula la vuelta entera. Ninguno ve tus cartas.</p>
-  <div class="opt"><label>Ayudas en tus cartas</label>${seg('hints', [[false,'Quitadas'],[true,'Puestas']], SETTINGS.hints, true)}<span class="desc">Muestran debajo de cada carta qué pasa si la juegas (Captura 3, Bac +2…).</span></div>
-  <div class="opt"><label>Etiquetas bajo el nombre</label>${seg('labels', [[false,'Quitadas'],[true,'Puestas']], SETTINGS.labels, true)}<span class="desc">Recuerdan la última jugada de cada uno (Bac, Limpia, Captura 2…). El «De nit» se ve siempre.</span></div>
-  <div class="opt"><label>Sóc socarrat</label>${seg('socarrat', [[false,'No'],[true,'Sí']], SETTINGS.socarrat, true)}<span class="desc">A la manera de Cocentaina: cada vez que s'ha pixat al repartir, la pareja que no reparte se apunta un punto.</span></div>
-  <div class="opt"><label>Baraja</label>${seg('deck', [['moderna','Moderna'],['clasica','Clásica']], SETTINGS.deck, true)}<span class="desc">La clásica es la baraja libre «Naipes Libres».</span></div>
-  <div class="opt"><label>Ritmo</label>${seg('speed', [[0,'Lento'],[1,'Normal'],[2,'Rápido']], speedIx)}</div>
-  <div class="acts"><button class="btn primary" type="button" data-act="back">Volver</button></div>`);
+  const off = [[false, L('Quitadas', 'Llevades')], [true, L('Puestas', 'Posades')]];
+  showPanel(`<h2>${L('Ajustes', 'Ajustos')}</h2>
+  <div class="opt"><label>${L('Idioma', 'Idioma')}</label>${seg('lang', [['es','Castellano'],['va','Valencià']], LANG, true)}</div>
+  <div class="opt"><label>${L('Nombres', 'Noms')}</label><div class="names">
+    <span><small>${L('Compañera', 'Companya')}</small><input id="nm2" type="text" maxlength="14" value="${esc(NAMES[2])}"></span>
+    <span><small>${L('Rival de la derecha', 'Rival de la dreta')}</small><input id="nm1" type="text" maxlength="14" value="${esc(NAMES[1])}"></span>
+    <span><small>${L('Rival de la izquierda', "Rival de l'esquerra")}</small><input id="nm3" type="text" maxlength="14" value="${esc(NAMES[3])}"></span></div></div>
+  <div class="opt"><label>${L(`Tu compañera (${esc(NAMES[2])})`, `La teua companya (${esc(NAMES[2])})`)}</label>${seg('partner', LVL(), SETTINGS.partner)}</div>
+  <div class="opt"><label>${L(`Rivales (${esc(NAMES[1])} y ${esc(NAMES[3])})`, `Rivals (${esc(NAMES[1])} i ${esc(NAMES[3])})`)}</label>${seg('rivals', LVL(), SETTINGS.rivals)}</div>
+  <p class="desc">${LEVELDESC()}</p>
+  <div class="opt"><label>${L('Ayudas en tus cartas', 'Ajudes en les teues cartes')}</label>${seg('hints', off, SETTINGS.hints, true)}<span class="desc">${L('Muestran debajo de cada carta qué pasa si la juegas (Captura 3, Bac +2…).', 'Mostren davall de cada carta què passa si la jugues (Arreplega 3, Bac +2…).')}</span></div>
+  <div class="opt"><label>${L('Etiquetas bajo el nombre', 'Etiquetes davall del nom')}</label>${seg('labels', off, SETTINGS.labels, true)}<span class="desc">${L('Recuerdan la última jugada de cada uno (Bac, Limpia, Captura 2…). El «De nit» se ve siempre.', "Recorden l'última jugada de cadascú (Bac, Limpia, Arreplega 2…). El «De nit» es veu sempre.")}</span></div>
+  <div class="opt"><label>Sóc socarrat</label>${seg('socarrat', [[false,'No'],[true,'Sí']], SETTINGS.socarrat, true)}<span class="desc">${L("A la manera de Cocentaina: cada vez que s'ha pixat al repartir, la pareja que no reparte se apunta un punto.", "A la manera de Cocentaina: cada vegada que s'ha pixat en repartir, la parella que no reparteix s'apunta un punt.")}</span></div>
+  <div class="opt"><label>${L('Baraja', 'Baralla')}</label>${seg('deck', [['moderna','Moderna'],['clasica', L('Clásica', 'Clàssica')]], SETTINGS.deck, true)}<span class="desc">${L('La clásica es la baraja libre «Naipes Libres».', 'La clàssica és la baralla lliure «Naipes Libres».')}</span></div>
+  <div class="opt"><label>${L('Ritmo', 'Ritme')}</label>${seg('speed', [[0, L('Lento', 'Lent')], [1, 'Normal'], [2, L('Rápido', 'Ràpid')]], speedIx)}</div>
+  <div class="acts"><button class="btn primary" type="button" data-act="back">${L('Volver', 'Tornar')}</button></div>`);
 }
-function startNewGame() { S = newGame(); S.feed = []; narr = `Mano 1. Reparte ${NAMES[S.dealer]}.`; hasSaved = true; closePanel(); beginHand(); }
+const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
+function startNewGame() { S = newGame(); S.feed = []; narr = L(`Mano 1. Reparte ${NAMES[S.dealer]}.`, `Mà 1. Reparteix ${NAMES[S.dealer]}.`); hasSaved = true; closePanel(); beginHand(); }
 
 $('hand').addEventListener('click', async e => {
   const b = e.target.closest('.hc'); if (!b || b.disabled) return;
@@ -1061,7 +1150,7 @@ $('bottom').addEventListener('click', async e => {
       if (k === 'first' && canFirst(S, 0)) startSing(S, 0);
       else if (k === 'second' && canSecond(S, 0)) singSecond(S, 0);
       else if (k === 'resp' && waiting) { sing(S, 0); resolveNit(S); }
-      else if (k === 'skip' && waiting) { say(S, 'No cantas de nit.'); resolveNit(S); }
+      else if (k === 'skip' && waiting) { say(S, L('No cantas de nit.', 'No cantes de nit.')); resolveNit(S); }
       render(); await drainFeed();
     } finally { busy = false; }
     render(); loop();
@@ -1079,6 +1168,7 @@ $('panel').addEventListener('click', e => {
     if (k === 'hints' || k === 'labels' || k === 'socarrat') SETTINGS[k] = v === 'true';
     else if (k === 'speed') speedIx = +v;
     else SETTINGS[k] = v;
+    if (k === 'lang') applyLang(SETTINGS.lang, SETTINGS.names);
     saveSettings(); showSettings(); render(); return;
   }
   const b = e.target.closest('[data-act]'); if (!b) return;
@@ -1089,16 +1179,23 @@ $('panel').addEventListener('click', e => {
   if (a === 'settings') showSettings();
   if (a === 'rules') { showRules(); panelBack = 'menu'; }
   if (a === 'back') showMenu();
-  if (a === 'nexthand') { S.dealer = (S.dealer + 1) % 4; newHand(S); S.feed = []; narr = `Mano ${S.handNo}. Reparte ${NAMES[S.dealer]}.`; closePanel(); beginHand(); }
+  if (a === 'nexthand') { S.dealer = (S.dealer + 1) % 4; newHand(S); S.feed = []; narr = L(`Mano ${S.handNo}. Reparte ${NAMES[S.dealer]}.`, `Mà ${S.handNo}. Reparteix ${NAMES[S.dealer]}.`); closePanel(); beginHand(); }
 });
 const closable = () => !$('panel').classList.contains('menu') && !['handEnd','gameEnd'].includes(S.phase) && panelBack !== 'menu';
 $('overlay').addEventListener('click', e => { if (e.target === $('overlay') && closable()) closePanel(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('overlay').hidden && closable()) closePanel(); });
+// nombres de los bots: se guardan al salir de cada casilla
+$('panel').addEventListener('change', e => {
+  const m = e.target.id && e.target.id.match(/^nm([123])$/); if (!m) return;
+  SETTINGS.names = SETTINGS.names || ['Toni','Maria','Vicent'];
+  SETTINGS.names[+m[1] - 1] = e.target.value.trim() || ['Toni','Maria','Vicent'][+m[1] - 1];
+  applyLang(SETTINGS.lang, SETTINGS.names); saveSettings(); showSettings(); render();
+});
 $('btnRules').addEventListener('click', () => { panelBack = null; showRules(); });
 $('btnLog').addEventListener('click', () => { panelBack = null; showLog(); });
 $('btnMenu').addEventListener('click', showMenu);
 
-window.CAU = { newGame, newHand, applyPlay, afterPlay, botChoose, botChooseHard, botChooseNormal, botChooseEasy, botBet, botSing, SETTINGS, betAct, betOptions, sing, startSing, resolveNit, canFirst, canSecond, cardSVG, get S() { return S; } };
+window.CAU = { newGame, newHand, applyPlay, afterPlay, botChoose, botChooseHard, botChooseNormal, botChooseEasy, botChooseDificil, botChooseExperto, botBet, botSing, SETTINGS, betAct, betOptions, sing, startSing, resolveNit, canFirst, canSecond, cardSVG, get S() { return S; } };
 
 function start(data) {
   if (data && data.S) { S = data.S; S.feed = []; hasSaved = true; render(); loop(); return; }
