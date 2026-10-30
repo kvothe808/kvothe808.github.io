@@ -637,6 +637,7 @@ function botChooseEasy(S, p) {
   return best;
 }
 const INFER = { on: true };
+const SMART = { on: true, opp2: 1, soft: 0.75, K: 40, sample: false, no: true, boost: 0.6 };
 // Reparte al azar las cartas que el bot no ve, pero respetando lo que se ha visto en la mesa:
 // quien ha cantado de nit tiene pareja (o rondín), quien no ha hecho bac pudiendo no tenía ese número,
 // y quien no ha capturado pudiendo, probablemente tampoco (se respeta 3 de cada 4 veces).
@@ -650,7 +651,7 @@ function determinize(S, p) {
     for (let tries = 0; tries < 40; tries++) {
       const pool = shuffle(unk.map(c => ({ ...c }))); let ok = true; const hands = {};
       for (const q of shuffle(others.slice())) {
-        const n = S.hands[q].length, soft = I.soft[q].filter(() => Math.random() < 0.75), h = [];
+        const n = S.hands[q].length, soft = I.soft[q].filter(() => Math.random() < SMART.soft), h = [];
         for (let i = 0; i < pool.length && h.length < n;) {
           const c = pool[i];
           if (I.no[q].includes(c.r) || soft.includes(c.r)) { i++; continue; }
@@ -707,11 +708,29 @@ const LEVELDESC = () => L('Fácil: mira solo lo que gana en el momento y se equi
 /* Difícil y muy difícil: cuentan en puntos de verdad. Una carta capturada vale medio punto
    (los puntos son las cartas que pasan de 20) y un bac vale 2. Así lo midió el estudio de miles de manos. */
 const ptsValue = (S, t) => 0.5 * (S.cap[t] - S.cap[1 - t]) + (bonSum(S.bon[t]) - bonSum(S.bon[1 - t]));
-function evalPlayPts(S, p, cid) {
+// Probabilidad de que cada jugador tenga cada número, sacada de repartos imaginados que respetan lo visto
+// (quién ha cantado de nit, quién no ha hecho bac pudiendo…). ph[q][r] entre 0 y 1.
+function holdProb(S, p, K = 40) {
+  const ph = [0,1,2,3].map(() => new Array(10).fill(0));
+  for (let k = 0; k < K; k++) {
+    const d = determinize(S, p);
+    for (let q = 0; q < 4; q++) { if (q === p) continue; const seen = new Set(d.hands[q].map(c => c.r)); seen.forEach(r => ph[q][r] += 1 / K); }
+  }
+  return ph;
+}
+function evalPlayPts(S, p, cid, ph) {
   const sim = cloneLite(S), t = team(p);
   const before = ptsValue(S, t); applyPlay(sim, p, cid); const gain = ptsValue(sim, t) - before;
   const q = (p + 1) % 4, h = sim.hands[q].length; if (!h) return gain;
-  const unk = unknownFor(sim, p), U = unk.length; const P = r => probHas(U, unk.filter(c => c.r === r).length, h);
+  const unk = unknownFor(sim, p), U = unk.length;
+  const cnt = r => unk.filter(c => c.r === r).length;
+  const I = SMART.on ? S.inf : null;
+  // siguiente jugador: probabilidad uniforme, salvo que ya haya demostrado no tener ese número (no hizo bac pudiendo)
+  const P = ph ? (r => ph[q][r]) : (r => I && SMART.no && I.no[q].includes(r) ? 0 : probHas(U, cnt(r), h));
+  // el rival de después de mi compañero: si ha cantado de nit y ha jugado un número en este reparto, seguramente le queda otro igual
+  const q3 = (p + 3) % 4, h3 = sim.hands[q3].length;
+  const P3 = r => { if (!h3) return 0; const base = probHas(U, cnt(r), h3);
+    if (I && S.sung && S.sung[q3] && I.played[q3].some(c => c.r === r) && cnt(r) > 0 && !I.no[q3].includes(r)) return Math.max(base, SMART.boost); return base; };
   let risk = 0;
   if (sim.chain && team(sim.chain.owner) === t) {
     const r = sim.chain.r, n = sim.chain.cards.length + escLen(sim, r);
@@ -723,12 +742,16 @@ function evalPlayPts(S, p, cid) {
     if (lp && !lp.cap && lp.id === c.id) v += 2;
     if (sim.table.length === 1) v += 1;
     risk += P(c.r) * v;
+    // el rival que juega después de mi compañero, si ha cantado de nit, puede llevarse la carta y la escala de encima
+    if (I && S.sung && S.sung[q3]) risk += SMART.opp2 * P3(c.r) * 0.5 * (2 + escLen(sim, c.r));
   }
   return gain - 0.7 * risk;
 }
-function botChooseDificil(S, p) {
+
+function botChooseDificil(S, p, fast) {
+  const ph = !fast && SMART.on && SMART.sample && S.inf ? holdProb(S, p, SMART.K) : null;
   let best = null, bv = -1e9;
-  for (const c of S.hands[p]) { const v = evalPlayPts(S, p, c.id) + Math.random() * 0.01; if (v > bv) { bv = v; best = c.id; } }
+  for (const c of S.hands[p]) { const v = evalPlayPts(S, p, c.id, ph) + Math.random() * 0.01; if (v > bv) { bv = v; best = c.id; } }
   return best;
 }
 // Muy difícil: imagina 60 repartos de las cartas que no ve y, para cada carta, juega el resto del reparto
@@ -742,7 +765,7 @@ function botChooseExperto(S, p) {
       applyPlay(sim, p, c.id); afterPlay(sim);
       for (let st = 0; st < 12; st++) {
         if (sim.over || sim.phase !== 'play' || sim.round !== det.round || !sim.hands[sim.turn].length) break;
-        const q = sim.turn; applyPlay(sim, q, botChooseDificil(sim, q)); afterPlay(sim);
+        const q = sim.turn; applyPlay(sim, q, botChooseDificil(sim, q, true)); afterPlay(sim);
       }
       tot[c.id] += ptsValue(sim, t) - v0;
     }
@@ -1243,7 +1266,7 @@ $('btnRules').addEventListener('click', () => { panelBack = null; showRules(); }
 $('btnLog').addEventListener('click', () => { panelBack = null; showLog(); });
 $('btnMenu').addEventListener('click', showMenu);
 
-window.CAU = { newGame, newHand, applyPlay, afterPlay, INFER, determinize, botChoose, botChooseHard, botChooseNormal, botChooseEasy, botChooseDificil, botChooseExperto, botBet, botSing, SETTINGS, betAct, betOptions, sing, startSing, resolveNit, canFirst, canSecond, cardSVG, get S() { return S; } };
+window.CAU = { newGame, newHand, applyPlay, afterPlay, INFER, SMART, holdProb, determinize, botChoose, botChooseHard, botChooseNormal, botChooseEasy, botChooseDificil, botChooseExperto, botBet, botSing, SETTINGS, betAct, betOptions, sing, startSing, resolveNit, canFirst, canSecond, cardSVG, get S() { return S; } };
 
 function start(data) {
   if (data && data.S) { S = data.S; S.feed = []; hasSaved = true; render(); loop(); return; }
