@@ -155,6 +155,7 @@ button{font:inherit;color:inherit}
 .big-result{font:800 20px var(--f-display);text-align:center;color:var(--gold)}
 .log{list-style:none;padding:0 !important;margin:0;display:flex;flex-direction:column;gap:2px !important;font-size:13.5px}
 .log li{padding:4px 0;border-bottom:1px solid var(--line)}
+.aliasin{width:100%;font:600 16px var(--f-body);color:var(--ink);background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:10px;padding:9px 11px}
 .chips{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;align-items:center;align-self:center;max-width:100%}
 .seat.side .chips{flex-direction:column;flex-wrap:nowrap;align-items:center;gap:2px}
 .seat.side .chips .chip{font-size:11px;padding:0 4px}
@@ -670,7 +671,7 @@ function evalPlay(S, p, cid) {
 /* Niveles: fácil (solo mira lo que gana ya, y a veces se equivoca),
    normal (lo que gana menos el riesgo de que el siguiente le haga bac o capture),
    difícil (imagina repartos posibles de las cartas ocultas y simula la vuelta entera) */
-let SETTINGS = { partner: 'experto', rivals: 'normal', hints: false, labels: false, socarrat: false, speed: 1, deck: 'moderna', lang: 'es', names: ['Toni','Maria','Vicent'], cotoBest: 5, unlocked: false, showAll: false };
+let SETTINGS = { partner: 'experto', rivals: 'normal', hints: false, labels: false, socarrat: false, speed: 1, deck: 'moderna', lang: 'es', names: ['Toni','Maria','Vicent'], cotoBest: 5, unlocked: false, showAll: false, share: null, alias: '' };
 try { Object.assign(SETTINGS, JSON.parse(localStorage.getItem('cau.settings') || '{}')); } catch (e) {}
 applyLang(SETTINGS.lang, SETTINGS.names);
 const levelOf = p => p === 2 ? SETTINGS.partner : SETTINGS.rivals;
@@ -1326,6 +1327,43 @@ const $ = id => document.getElementById(id);
 let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
+/* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
+const APP_VER = 'cau-2026-10-30-13';
+const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
+function deviceId() {
+  try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
+}
+let shareBusy = false;
+async function shareFlush() {
+  if (shareBusy || typeof fetch !== 'function') return;
+  let q; try { q = JSON.parse(localStorage.getItem('cau.queue') || '[]'); } catch (e) { q = []; }
+  if (!q.length) return;
+  shareBusy = true;
+  try {
+    const batch = q.slice(0, 20);
+    const r = await fetch(SUPA.url, { method: 'POST', headers: { apikey: SUPA.key, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(batch) });
+    if (r.ok) { let q2; try { q2 = JSON.parse(localStorage.getItem('cau.queue') || '[]'); } catch (e) { q2 = []; } localStorage.setItem('cau.queue', JSON.stringify(q2.slice(batch.length))); if (q2.length > batch.length) setTimeout(shareFlush, 1000); }
+  } catch (e) {} finally { shareBusy = false; }
+}
+function shareRec(rec, juego, result) {
+  if (!rec || rec.sent || !SETTINGS.share) return;
+  rec.sent = true;
+  const datos = JSON.parse(JSON.stringify(rec)); delete datos.sent; delete datos.cur; datos.result = result;
+  try {
+    const q = JSON.parse(localStorage.getItem('cau.queue') || '[]');
+    q.push({ jugador: deviceId(), alias: SETTINGS.alias || null, juego, version: APP_VER, datos });
+    localStorage.setItem('cau.queue', JSON.stringify(q.slice(-300)));
+  } catch (e) {}
+  shareFlush();
+}
+window.addEventListener('online', () => shareFlush());
+function showShareAsk() {
+  showPanel(`<h2>${L('Ayuda a mejorar los bots', 'Ajuda a millorar els bots')}</h2>
+  <p>${L('Si quieres, la app envía cada mano que juegas (las cartas, las jugadas y el marcador) para estudiar cómo se juega y mejorar los bots. No se envía nada más: ni tu nombre ni tu correo, solo el alias que pongas aquí.', 'Si vols, l’app envia cada mà que jugues (les cartes, les jugades i el marcador) per a estudiar com es juga i millorar els bots. No s’envia res més: ni el teu nom ni el teu correu, només l’àlies que poses ací.')}</p>
+  <div class="opt"><label>${L('Tu alias', 'El teu àlies')}</label><input id="alias" class="aliasin" type="text" maxlength="20" value="${esc(SETTINGS.alias || '')}" placeholder="${L('Por ejemplo, Pepe', 'Per exemple, Pepe')}"></div>
+  <p class="desc">${L('Puedes cambiarlo cuando quieras en Ajustes.', 'Pots canviar-ho quan vulgues en Ajustos.')}</p>
+  <div class="acts"><button class="btn" type="button" data-act="share-no">${L('No compartir', 'No compartir')}</button><button class="btn primary" type="button" data-act="share-yes">${L('Compartir', 'Compartir')}</button></div>`);
+}
 function saveSettings() { SETTINGS.speed = speedIx; try { localStorage.setItem('cau.settings', JSON.stringify(SETTINGS)); } catch (e) {} }
 const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const sleep = ms => new Promise(r => setTimeout(r, ms * SPEEDS[speedIx][1]));
@@ -1597,6 +1635,7 @@ const winTitle = () => S.winner === 0 ? L('¡Habéis ganado la partida!', 'Heu g
 function scoreLine(i) { const [n, w] = scoreTxt(S.score[i]); return `${n} ${w}`; }
 
 function showSummary() {
+  shareRec(S.rec, 'cau', { score: S.score.slice(), over: !!S.over, winner: S.over ? S.winner : null, falta: !!S.endFalta, mid: !!S.endMid });
   if (S.phase === 'gameEnd') {
     const why = S.endFalta ? L('Se la han jugado en el de nit.', "S'ho han jugat en el de nit.") : L('Han llegado a 40 durante la mano.', 'Han arribat a 40 durant la mà.');
     showPanel(`<h2>${winTitle()}</h2><p class="big-result">${why}</p><p style="text-align:center">${TEAMN[0]} ${scoreLine(0)} · ${TEAMN[1]} ${scoreLine(1)}</p><div class="acts">${APP.mode === 'cotocau' ? `<button class="btn primary" type="button" data-act="match">${L('Continuar', 'Continuar')}</button>` : `<button class="btn primary" type="button" data-act="newgame">${L('Nueva partida', 'Partida nova')}</button>`}</div>`);
@@ -1720,6 +1759,7 @@ const LVL = () => [['facil', L('Fácil', 'Fàcil')], ['normal', 'Normal'], ['dif
 const seg = (key, opts, cur, two) => `<div class="seg ${two ? 'two' : ''} ${opts.length === 4 ? 'four' : ''}" role="group">${opts.map(([v, l]) => `<button type="button" data-set="${key}" data-val="${v}" aria-pressed="${String(cur) === String(v)}">${l}</button>`).join('')}</div>`;
 function showMenu() {
   panelBack = null;
+  if (SETTINGS.share == null) return showShareAsk();
   const cont = hasSaved && savedActive() ? `<button class="btn primary" type="button" data-act="continue">${L('Continuar', 'Continuar')}<small class="contlbl">${esc(continueLabel())}</small></button>` : '';
   showPanel(`<div class="menu" style="display:flex;flex-direction:column;gap:14px"><div class="logo">CotoCau</div><p class="tag">Els jocs de cartes de les filaes d'Alcoi</p><div class="stack">${cont}<button class="btn ${cont ? '' : 'primary'}" type="button" data-act="play">${L('Jugar', 'Jugar')}</button><button class="btn" type="button" data-act="settings">${L('Ajustes', 'Ajustos')}</button><button class="btn" type="button" data-act="rules">${L('Reglas', 'Regles')}</button></div></div>`);
   $('panel').classList.add('menu');
@@ -1740,6 +1780,8 @@ function showSettings() {
   <div class="opt"><label>${L('Etiquetas bajo el nombre', 'Etiquetes davall del nom')}</label>${seg('labels', off, SETTINGS.labels, true)}<span class="desc">${L('Recuerdan la última jugada de cada uno (Bac, Limpia, Captura 2…). El «De nit» se ve siempre.', "Recorden l'última jugada de cadascú (Bac, Limpia, Arreplega 2…). El «De nit» es veu sempre.")}</span></div>
   <div class="opt"><label>Sóc socarrat</label>${seg('socarrat', [[false,'No'],[true,'Sí']], SETTINGS.socarrat, true)}<span class="desc">${L("A la manera de Cocentaina: cada vez que s'ha pixat al repartir, la pareja que no reparte se apunta un punto.", "A la manera de Cocentaina: cada vegada que s'ha pixat en repartir, la parella que no reparteix s'apunta un punt.")}</span></div>
   <div class="opt"><label>${L('Baraja', 'Baralla')}</label>${seg('deck', [['moderna','Moderna'],['clasica', L('Clásica', 'Clàssica')]], SETTINGS.deck, true)}<span class="desc">${L('La clásica es la baraja libre «Naipes Libres».', 'La clàssica és la baralla lliure «Naipes Libres».')}</span></div>
+  <div class="opt"><label>${L('Compartir mis partidas', 'Compartir les meues partides')}</label>${seg('share', off.map(([v]) => [v, v ? L('Sí', 'Sí') : 'No']), !!SETTINGS.share, true)}<span class="desc">${L('Envía tus manos (cartas, jugadas y marcador, sin datos personales) para mejorar los bots.', 'Envia les teues mans (cartes, jugades i marcador, sense dades personals) per a millorar els bots.')}</span>
+    <span class="names"><span><small>${L('Alias', 'Àlies')}</small><input id="aliasset" type="text" maxlength="20" value="${esc(SETTINGS.alias || '')}"></span></span></div>
   <div class="opt"><label>${L('Ver todas las cartas (pruebas)', 'Vore totes les cartes (proves)')}</label>${seg('showAll', off, !!SETTINGS.showAll, true)}<span class="desc">${L('Para estudiar a los bots: enseña las cartas de tu compañera y de los rivales.', 'Per a estudiar els bots: mostra les cartes de la teua companya i dels rivals.')}</span></div>
   <div class="opt"><label>${L('Ritmo', 'Ritme')}</label>${seg('speed', [[0, L('Lento', 'Lent')], [1, 'Normal'], [2, L('Rápido', 'Ràpid')]], speedIx)}</div>
   <div class="acts"><button class="btn primary" type="button" data-act="back">${L('Volver', 'Tornar')}</button></div>`);
@@ -1798,7 +1840,7 @@ $('panel').addEventListener('click', e => {
   const sb = e.target.closest('[data-set]');
   if (sb) {
     const k = sb.dataset.set, v = sb.dataset.val;
-    if (k === 'hints' || k === 'labels' || k === 'socarrat' || k === 'showAll') SETTINGS[k] = v === 'true';
+    if (k === 'hints' || k === 'labels' || k === 'socarrat' || k === 'showAll' || k === 'share') SETTINGS[k] = v === 'true';
     else if (k === 'speed') speedIx = +v;
     else if (k === 'cotoBest') SETTINGS.cotoBest = +v;
     else SETTINGS[k] = v;
@@ -1807,6 +1849,7 @@ $('panel').addEventListener('click', e => {
   }
   const b = e.target.closest('[data-act]'); if (!b) return;
   const a = b.dataset.act;
+  if (a === 'share-yes' || a === 'share-no') { const al = $('alias'); if (al) SETTINGS.alias = al.value.trim().slice(0, 20); SETTINGS.share = a === 'share-yes'; saveSettings(); if (SETTINGS.share) shareFlush(); return showMenu(); }
   if (a === 'exp' || a === 'expPrev') return doExport(a === 'expPrev');
   if (a === 'close') { if (panelBack === 'menu') showMenu(); else closePanel(); }
   if (a === 'newgame') startGame('cau');
@@ -1837,6 +1880,7 @@ $('panel').addEventListener('submit', e => {
   else showPassword($('panel').dataset.target || 'coto', true);
 });
 $('panel').addEventListener('change', e => {
+  if (e.target.id === 'aliasset') { SETTINGS.alias = e.target.value.trim().slice(0, 20); saveSettings(); return; }
   const m = e.target.id && e.target.id.match(/^nm([123])$/); if (!m) return;
   SETTINGS.names = SETTINGS.names || ['Toni','Maria','Vicent'];
   SETTINGS.names[+m[1] - 1] = e.target.value.trim() || ['Toni','Maria','Vicent'][+m[1] - 1];
@@ -2035,6 +2079,7 @@ async function beginCoto() {
   render(); cotoLoop();
 }
 function showCotoSummary() {
+  shareRec(G.rec, 'coto', { score: G.score.slice(), phase: G.phase, partidaWinner: G.partidaWinner ?? null, wins: G.wins.slice(), mid: !!G.endMid, summary: G.handSummary || null });
   const H = G.handSummary || [{ pts: 0, cantes: 0, ultimas: 0, total: 0 }, { pts: 0, cantes: 0, ultimas: 0, total: 0 }];
   const row = (l, k) => `<tr><td>${l}</td><td>${H[0][k]}</td><td>${H[1][k]}</td></tr>`;
   const sc = i => { const [n, w] = coScoreTxt(G.score[i]); return `${n} ${w}`; };
@@ -2152,7 +2197,7 @@ function start(data) {
   if (app) {
     APP.mode = app.mode; APP.M = app.M; S = app.S || newGame(); G = app.G; S.feed = S.feed || []; if (G) G.feed = [];
     if (S && !S.slots) { S.slots = {}; const tb = S.table; S.table = []; for (const c of tb) { S.slots[c.id] = pickSlot(S); S.table.push(c); } }
-    hasSaved = savedActive(); render(); showMenu(); return;
+    hasSaved = savedActive(); render(); showMenu(); setTimeout(shareFlush, 2000); return;
   }
   const saved = load();
   if (saved && !saved.slots) {   // partidas guardadas con la versión anterior
@@ -2162,7 +2207,7 @@ function start(data) {
   }
   hasSaved = !!(saved && !saved.over);
   S = saved || newGame(); S.feed = [];
-  render(); showMenu();
+  render(); showMenu(); setTimeout(shareFlush, 2000);
 }
 window.claude?.hot?.snapshot?.(() => ({ S, G, app: { mode: APP.mode, M: APP.M } }));
 window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
