@@ -1064,11 +1064,11 @@ function coPlay(G, p, cid) {
   G.lastDraw = []; G.autoSwap = null;
   // última baza con montón: si la gana tu pareja y tenéis el 7 de triunfo sin cambiar, se cambia solo,
   // para que la pinta (un as, un tres…) no se la lleve el rival que roba el último
+  if (G.rec) G.rec.ev.push(`${G.rec.cur} → ${SEATC[w.p]} +${pts}${last ? ' (con las 10 de últimas)' : ''} | marcador ${G.score[0]}-${G.score[1]}`);
   if (G.stock.length === 4 && !G.swapped && C_CAMBIABLE.includes(G.pinta.r)) {
     const holder = [w.p, (w.p + 2) % 4].find(q => G.hands[q].some(c => c.s === G.trump && c.r === C_SIETE));
-    if (holder != null) { G.autoSwap = { p: holder, old: { ...G.pinta } }; coSwap(G, holder); }
+    if (holder != null) { G.autoSwap = { p: holder, old: { ...G.pinta } }; coSwap(G, holder); if (G.rec) G.rec.ev[G.rec.ev.length - 1] += ' (automático: ganan la última baza con montón)'; }
   }
-  if (G.rec) G.rec.ev.push(`${G.rec.cur} → ${SEATC[w.p]} +${pts}${last ? ' (con las 10 de últimas)' : ''} | marcador ${G.score[0]}-${G.score[1]}`);
   if (G.stock.length) for (let k = 0; k < 4; k++) {
     const q = (w.p + k) % 4, d = G.stock.shift(); G.lastDraw.push({ p: q, id: d.id });
     if (d.id === G.pinta.id) { G.pintaHolder = q; G.pintaHolderCard = d.id; }
@@ -1440,7 +1440,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-10-31-3';
+const APP_VER = 'cau-2026-11-01-1';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
