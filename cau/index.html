@@ -996,9 +996,9 @@ function coLegal(G, p) {
   if (over.length) return over;
   return w.c.s === G.trump ? h.slice() : trumps;   // si no puede superar el triunfo del rival, va libre
 }
-// ¿Qué cantes puede hacer p ahora? En Alcoy: en cualquier momento, mientras tenga rey y sota y su pareja haya hecho alguna baza en la mano
+// ¿Qué cantes puede hacer p ahora? Su pareja acaba de ganar la baza y aún no se ha salido a la siguiente
 function coCantesFor(G, p) {
-  if (G.phase !== 'play' || !(G.won[team(p)] > 0)) return [];
+  if (G.phase !== 'play' || G.canSing !== team(p) || G.trick.length) return [];
   const out = [];
   for (let s = 0; s < 4; s++) {
     if (G.sung.includes(s)) continue;
@@ -1262,7 +1262,7 @@ function coSolveArr(hands, trick, turn, tr, opt) {
     let pts = CPTS[t[0].c.r] + CPTS[t[1].c.r] + CPTS[t[2].c.r] + CPTS[t[3].c.r]; if (left === 0) pts += 10;
     const hw0 = hw[T]; hw[T] = true;
     const ns = []; let cant = [0, 0];
-    if (left > 0) for (const q of [0, 1, 2, 3]) { if (!hw[q & 1]) continue; for (let s = 0; s < 4; s++) if (!sung.includes(s) && H[q].some(x => x.s === s && x.r === C_REY) && H[q].some(x => x.s === s && x.r === C_SOTA)) { sung.push(s); ns.push(s); cant[q & 1] += s === tr ? 40 : 20; } }
+    if (left > 0) for (const q of [T, T + 2]) { for (let s = 0; s < 4; s++) if (!sung.includes(s) && H[q].some(x => x.s === s && x.r === C_REY) && H[q].some(x => x.s === s && x.r === C_SOTA)) { sung.push(s); ns.push(s); cant[q & 1] += s === tr ? 40 : 20; } }
     pts += cant[T];
     const g = (T === 0 ? pts : -pts) + (T === 0 ? -cant[1] : cant[0]);
     sc[T] += pts; sc[1 - T] += cant[1 - T];
@@ -1326,7 +1326,7 @@ function coBotExpert(G, p, N = 40) {
   // primera mano, con montón: no fallar una baza con pocos puntos, salvo que tenga un cante (rey y sota) por cantar
   if (!lead && !arr && !G.vueltas && CO_EXP.minTrumpPts) {
     const T = G.trick.reduce((a, x) => a + CPTS[x.c.r], 0);
-    const cante = !(G.won[t] > 0) && [0, 1, 2, 3].some(s => !G.sung.includes(s) && G.hands[p].some(c => c.s === s && c.r === C_REY) && G.hands[p].some(c => c.s === s && c.r === C_SOTA));
+    const cante = [0, 1, 2, 3].some(s => !G.sung.includes(s) && G.hands[p].some(c => c.s === s && c.r === C_REY) && G.hands[p].some(c => c.s === s && c.r === C_SOTA));
     const nt = legal.filter(c => c.s !== G.trump);
     if (T < CO_EXP.minTrumpPts && !cante && nt.length) legal = nt;
     if (legal.length === 1) return legal[0].id;
@@ -1420,7 +1420,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-10-30-22';
+const APP_VER = 'cau-2026-10-31-1';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
@@ -1752,14 +1752,14 @@ function rulesCoto() {
   <p>El guiñote de Alcoy: cuatro jugadores en dos parejas, baraja española de 40 cartas. Se juega hacia la derecha.</p>
   <h3>Cartas</h3><ul><li>Orden de fuerza: as, tres, rey, sota, caballo, 7, 6, 5, 4, 2.</li><li>Puntos: as 11, tres 10, rey 4, sota 3, caballo 2; el resto, 0. Con las 10 de últimas hay 130 puntos por mano.</li><li>Cualquier triunfo gana a cualquier carta de otro palo. Si no hay triunfo, gana la más alta del palo de salida.</li></ul>
   <h3>Reparto</h3><ul><li>6 cartas a cada uno, de 3 en 3. La siguiente se deja boca arriba bajo el montón: es la pinta y marca el triunfo.</li><li>Reparte quien hizo las 10 de últimas en la mano anterior. Sale el de su derecha.</li></ul>
-  <h3>Mientras queda montón</h3><ul><li>Tirada libre: no hay que asistir ni matar.</li><li>Después de cada baza roban todos, empezando por quien la ha ganado, que sale en la siguiente.</li><li><b>Cantes:</b> rey y sota del mismo palo. Las 40 si es de triunfo, las 20 si no. Se puede cantar en cualquier momento, mientras tengas el rey y la sota en la mano y tu pareja haya hecho alguna baza en esa mano (también en el arrastre); se pueden cantar varios y también es opcional.</li><li><b>Cambiar el 7:</b> si la pinta es figura, tres o as, quien tenga el 7 de triunfo la puede cambiar mientras quede montón, si su pareja ya ha ganado alguna baza.</li></ul>
+  <h3>Mientras queda montón</h3><ul><li>Tirada libre: no hay que asistir ni matar.</li><li>Después de cada baza roban todos, empezando por quien la ha ganado, que sale en la siguiente.</li><li><b>Cantes:</b> rey y sota del mismo palo. Las 40 si es de triunfo, las 20 si no. Se canta cuando tu pareja acaba de ganar una baza, antes de salir a la siguiente; se pueden cantar varios a la vez y también es opcional.</li><li><b>Cambiar el 7:</b> si la pinta es figura, tres o as, quien tenga el 7 de triunfo la puede cambiar mientras quede montón, si su pareja ya ha ganado alguna baza.</li></ul>
   <h3>Arrastre (sin montón)</h3><ul><li>Siempre hay que seguir el palo.</li><li>Si va ganando un rival: hay que superarle si se puede. Sin el palo, hay que fallar con triunfo, y si ya hay un triunfo, echar uno más alto si se tiene.</li><li>Si va ganando tu compañero: cualquier carta del palo; sin el palo, carta libre.</li></ul>
   <h3>Partida y coto</h3><ul><li>Se gana con 101 puntos: las 50 primeras son malas y a partir de ahí, buenas (51 buenas).</li><li>Si al acabar la mano las dos parejas pasan de 50 buenas, gana la que hizo las 10 de últimas.</li><li>Si nadie llega, se juega otra mano de vueltas sumando, y la partida acaba en el momento en que una pareja llega a 101 (con bazas o cantes): «se sale».</li><li>El coto se juega al mejor de 5 partidas (o de 3, en Ajustes).</li></ul>`,
   `<h2>Regles del Coto</h2>
   <p>El guinyot d'Alcoi: quatre jugadors en dues parelles, baralla espanyola de 40 cartes. Es juga cap a la dreta.</p>
   <h3>Cartes</h3><ul><li>Ordre de força: as, tres, rei, sota, cavall, 7, 6, 5, 4, 2.</li><li>Punts: as 11, tres 10, rei 4, sota 3, cavall 2; la resta, 0. Amb les 10 d'últimes hi ha 130 punts per mà.</li><li>Qualsevol triomf guanya a qualsevol carta d'un altre pal. Si no hi ha triomf, guanya la més alta del pal d'eixida.</li></ul>
   <h3>Repartiment</h3><ul><li>6 cartes a cadascú, de 3 en 3. La següent es deixa cap per amunt davall del munt: és la pinta i marca el triomf.</li><li>Reparteix qui va fer les 10 d'últimes en la mà anterior. Ix el de la seua dreta.</li></ul>
-  <h3>Mentre queda munt</h3><ul><li>Tirada lliure: no cal assistir ni matar.</li><li>Després de cada basa roben tots, començant per qui l'ha guanyada, que ix en la següent.</li><li><b>Cants:</b> rei i sota del mateix pal. Les 40 si és de triomf, les 20 si no. Es pot cantar en qualsevol moment, mentre tingues el rei i la sota en la mà i la teua parella haja fet alguna basa en eixa mà (també en l'arrossegament); se'n poden cantar diversos i també és opcional.</li><li><b>Canviar el 7:</b> si la pinta és figura, tres o as, qui tinga el 7 de triomf la pot canviar mentre quede munt, si la seua parella ja ha guanyat alguna basa.</li></ul>
+  <h3>Mentre queda munt</h3><ul><li>Tirada lliure: no cal assistir ni matar.</li><li>Després de cada basa roben tots, començant per qui l'ha guanyada, que ix en la següent.</li><li><b>Cants:</b> rei i sota del mateix pal. Les 40 si és de triomf, les 20 si no. Es canta quan la teua parella acaba de guanyar una basa, abans d'eixir a la següent; se'n poden cantar diversos alhora i també és opcional.</li><li><b>Canviar el 7:</b> si la pinta és figura, tres o as, qui tinga el 7 de triomf la pot canviar mentre quede munt, si la seua parella ja ha guanyat alguna basa.</li></ul>
   <h3>Arrossegament (sense munt)</h3><ul><li>Sempre cal seguir el pal.</li><li>Si guanya un rival: cal superar-lo si es pot. Sense el pal, cal fallar amb triomf, i si ja hi ha un triomf, tirar-ne un de més alt si se'n té.</li><li>Si guanya el teu company: qualsevol carta del pal; sense el pal, carta lliure.</li></ul>
   <h3>Partida i coto</h3><ul><li>Es guanya amb 101 punts: els 50 primers són males i a partir d'ací, bones (51 bones).</li><li>Si en acabar la mà les dues parelles passen de 50 bones, guanya la que va fer les 10 d'últimes.</li><li>Si ningú no hi arriba, es juga una altra mà de voltes sumant, i la partida acaba en el moment en què una parella arriba a 101 (amb bases o cants): «s'ix».</li><li>El coto es juga al millor de 5 partides (o de 3, en Ajustos).</li></ul>`);
 }
@@ -2051,11 +2051,12 @@ function coRenderBottom() {
   let btns = '';
   if (!busy && G.phase === 'play') {
     for (const s of coCantesFor(G, 0)) btns += `<button class="btn sing" type="button" data-co="sing" data-s="${s}">${s === G.trump ? L('Cantar las 40', 'Cantar les 40') : `${L('Cantar', 'Cantar')} 20 en ${SUITN[s]}`}</button>`;
+    if (btns && G.turn !== 0) btns += `<button class="btn" type="button" data-co="nosing">${L('No cantar', 'No cantar')}</button>`;
     if (coCanSwap(G, 0)) btns += `<button class="btn primary" type="button" data-co="swap">${L('Cambiar el 7', 'Canviar el 7')}</button>`;
   }
   let txt = '';
   if (G.phase === 'play' && !coFx && !coShowLast) txt = G.turn === 0 && !busy ? (coArrastre(G) && G.trick.length ? L('<b>Te toca.</b> Las cartas que no puedes jugar salen apagadas.', '<b>Et toca.</b> Les cartes que no pots jugar ixen apagades.') : L('<b>Te toca.</b> Elige una carta.', '<b>Et toca.</b> Tria una carta.')) : `${L('Juega', 'Juga')} <b>${NAMES[G.turn]}</b>…`;
-  if (btns && G.turn === 0 && !busy) txt = L('<b>Te toca.</b> Puedes cantar antes de tirar.', '<b>Et toca.</b> Pots cantar abans de tirar.');
+  if (btns && G.turn !== 0) txt = L('Podéis cantar: ¿cantas antes de que salga la baza?', 'Podeu cantar: cantes abans que isca la basa?');
   el.innerHTML = `<div class="status ${G.turn === 0 ? 'mine' : ''}"><span>${txt}</span>${btns}</div>`;
 }
 async function coDrain() {
@@ -2128,6 +2129,7 @@ async function cotoLoop() {
       let sang = false;
       for (let i = 0; i < 4; i++) { const q = (G.turn + i) % 4; if (q === 0) continue; const ss = coCantesFor(G, q); if (ss.length) { for (const s of ss) coSing(G, q, s); sang = true; } }
       if (sang) { render(); await coDrain(); continue; }
+      if (coCantesFor(G, 0).length && G.cantePass !== G.trickNo && G.turn !== 0) break;
       if (G.turn === 0) break;
       render(); await sleep(650);
       const p = G.turn;
