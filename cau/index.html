@@ -1369,7 +1369,27 @@ function coBotExpert(G, p, N = 40) {
   let best = null, bv = -1e9; for (const c of legal) { const v = tot[c.id] / n - pen(c) + Math.random() * 1e-3; if (v > bv) { bv = v; best = c.id; } }
   return best;
 }
+// En la mano de vueltas: carta que gana la baza seguro y con la que se llega a 101
+function coSureExit(G, p, all) {
+  if (!G.vueltas || G.phase !== 'play') return null;
+  const t = team(p), need = 101 - G.score[t]; if (need > 60) return null;
+  const unseen = coUnseen(G, p), last = G.trick.length === 3;
+  const tablePts = G.trick.reduce((a, x) => a + CPTS[x.c.r], 0);
+  const w = G.trick.length ? coTrickWinner(G, G.trick) : null;
+  const lastTrick = G.hands.every(h => h.length <= 1) && !G.stock.length;
+  let best = null;
+  for (const c of coLegal(G, p)) {
+    if (w && team(w.p) !== t && !coBeats(c, w.c, G.trump)) continue;
+    if (w && team(w.p) === t && !coBeats(c, w.c, G.trump) && !(last || coIsMaster(G, w.c, unseen))) continue;
+    if (!last && !(w && team(w.p) === t && !coBeats(c, w.c, G.trump)) && !coIsMaster(G, c, unseen)) continue;
+    const pts = tablePts + CPTS[c.r] + (lastTrick && last ? 10 : 0);
+    if (pts >= need && all) all.push(c.id);
+    if (pts >= need && (!best || CSTR[c.r] + (c.s === G.trump ? 10 : 0) < CSTR[best.r] + (best.s === G.trump ? 10 : 0))) best = c;
+  }
+  return best ? best.id : null;
+}
 function coBotChoose(G, p, lvl) {
+  if (lvl === 'experto' || lvl === 'dificil') { const x = coSureExit(G, p); if (x != null) return x; }   // salirse ya si es seguro
   if (lvl === 'facil') return coBotEasy(G, p);
   if (lvl === 'dificil') return coBotBest(G, p);
   if (lvl === 'experto') return coBotExpert(G, p);
@@ -1420,7 +1440,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-10-31-1';
+const APP_VER = 'cau-2026-10-31-2';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
