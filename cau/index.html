@@ -1440,7 +1440,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-10-31-2';
+const APP_VER = 'cau-2026-10-31-3';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
@@ -1889,7 +1889,7 @@ function showSettings() {
     <span><small>${L('Rival de la izquierda', "Rival de l'esquerra")}</small><input id="nm3" type="text" maxlength="14" value="${esc(NAMES[3])}"></span></div></div>
   <div class="opt"><label>${L(`Tu compañera (${esc(NAMES[2])})`, `La teua companya (${esc(NAMES[2])})`)}</label>${seg('partner', LVL(), SETTINGS.partner)}</div>
   <div class="opt"><label>${L(`Rivales (${esc(NAMES[1])} y ${esc(NAMES[3])})`, `Rivals (${esc(NAMES[1])} i ${esc(NAMES[3])})`)}</label>${seg('rivals', LVL(), SETTINGS.rivals)}</div>
-  ${SETTINGS.unlocked ? `<div class="opt"><label>${L('Coto al mejor de', 'Coto al millor de')}</label>${seg('cotoBest', [[3, L('3 partidas', '3 partides')], [5, L('5 partidas', '5 partides')]], SETTINGS.cotoBest || 5, true)}</div>` : ''}
+  ${true ? `<div class="opt"><label>${L('Coto al mejor de', 'Coto al millor de')}</label>${seg('cotoBest', [[3, L('3 partidas', '3 partides')], [5, L('5 partidas', '5 partides')]], SETTINGS.cotoBest || 5, true)}</div>` : ''}
   <div class="opt"><label>${L('Ayudas en tus cartas (Cau)', 'Ajudes en les teues cartes (Cau)')}</label>${seg('hints', off, SETTINGS.hints, true)}<span class="desc">${L('Muestran debajo de cada carta qué pasa si la juegas (Captura 3, Bac +2…).', 'Mostren davall de cada carta què passa si la jugues (Arreplega 3, Bac +2…).')}</span></div>
   <div class="opt"><label>${L('Etiquetas bajo el nombre', 'Etiquetes davall del nom')}</label>${seg('labels', off, SETTINGS.labels, true)}<span class="desc">${L('Recuerdan la última jugada de cada uno (Bac, Limpia, Captura 2…). El «De nit» se ve siempre.', "Recorden l'última jugada de cadascú (Bac, Limpia, Arreplega 2…). El «De nit» es veu sempre.")}</span></div>
   <div class="opt"><label>Sóc socarrat</label>${seg('socarrat', [[false,'No'],[true,'Sí']], SETTINGS.socarrat, true)}<span class="desc">${L("A la manera de Cocentaina: cada vez que s'ha pixat al repartir, la pareja que no reparte se apunta un punto.", "A la manera de Cocentaina: cada vegada que s'ha pixat en repartir, la parella que no reparteix s'apunta un punt.")}</span></div>
@@ -1970,7 +1970,7 @@ $('panel').addEventListener('click', e => {
   if (a === 'continue') { closePanel(); render(); if (APP.mode === 'cotocau' && APP.M.stage === 'draw') return showDraw(); loop(); }
   if (a === 'play') showPlay();
   if (a === 'play-cau') startGame('cau');
-  if (a === 'play-coto' || a === 'play-cotocau') { const t = a.slice(5); if (SETTINGS.unlocked) startGame(t); else showPassword(t); }
+  if (a === 'play-coto' || a === 'play-cotocau') { const t = a.slice(5); startGame(t); }
   if (a === 'co-next') { coNext(G); closePanel(); beginCoto(); }
   if (a === 'newcoto') startGame('coto');
   if (a === 'match') matchNext();
@@ -2301,8 +2301,7 @@ function savedActive() {
 }
 function showPlay() {
   panelBack = 'menu';
-  const lock = SETTINGS.unlocked ? '' : '🔒 ';
-  const dev = `<span class="devtag">${L('En desarrollo', 'En desenvolupament')}</span>`;
+  const lock = '', dev = '';
   showPanel(`<div class="menu" style="display:flex;flex-direction:column;gap:14px"><h2>${L('Jugar', 'Jugar')}</h2><div class="stack">
     <button class="btn playopt" type="button" data-act="play-cotocau"><b>${lock}CotoCau</b>${dev}<small>${L('Juego completo: Coto, después Cau y desempate', 'Joc complet: Coto, després Cau i desempat')}</small></button>
     <button class="btn playopt" type="button" data-act="play-coto"><b>${lock}Coto</b>${dev}<small>${L(`Al mejor de ${SETTINGS.cotoBest || 5} partidas`, `Al millor de ${SETTINGS.cotoBest || 5} partides`)}</small></button>
