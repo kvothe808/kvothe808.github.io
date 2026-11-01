@@ -1523,7 +1523,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-01-4';
+const APP_VER = 'cau-2026-11-01-5';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
@@ -1962,7 +1962,7 @@ function showMenu() {
   if (SETTINGS.share == null) return showShareAsk();
   const cont = hasSaved && savedActive() ? `<button class="btn primary" type="button" data-act="continue">${L('Continuar', 'Continuar')}<small class="contlbl">${esc(continueLabel())}</small></button>` : '';
   const fan = [[0, -24], [10, -8], [20, 8], [30, 24]].map(([id, a]) => `<div class="fc" style="transform:translateX(-50%) rotate(${a}deg)">${cardHTML(coCard(id))}</div>`).join('');
-  showPanel(`<div class="menu" style="display:flex;flex-direction:column;gap:14px"><div class="fan" aria-hidden="true">${fan}</div><div class="logo">CotoCau</div><p class="tag">Els jocs de cartes de les filaes d'Alcoi</p><p class="desc" style="text-align:center;opacity:.6;margin:0">v. ${APP_VER.replace('cau-', '')}</p><div class="stack">${cont}<button class="btn ${cont ? '' : 'primary'}" type="button" data-act="play">${L('Jugar', 'Jugar')}</button><button class="btn" type="button" data-act="tutorial">${L('Aprender a jugar', 'Aprendre a jugar')}</button><button class="btn" type="button" data-act="guided">${L('Partida guiada de Coto', 'Partida guiada de Coto')}</button><button class="btn" type="button" data-act="settings">${L('Ajustes', 'Ajustos')}</button><button class="btn" type="button" data-act="rules">${L('Reglas', 'Regles')}</button></div></div>`);
+  showPanel(`<div class="menu" style="display:flex;flex-direction:column;gap:14px"><div class="fan" aria-hidden="true">${fan}</div><div class="logo">CotoCau</div><p class="tag">Els jocs de cartes de les filaes d'Alcoi</p><p class="desc" style="text-align:center;opacity:.6;margin:0">v. ${APP_VER.replace('cau-', '')}</p><div class="stack">${cont}<button class="btn ${cont ? '' : 'primary'}" type="button" data-act="play">${L('Jugar', 'Jugar')}</button><button class="btn" type="button" data-act="tutorial">Tutorial</button><button class="btn" type="button" data-act="settings">${L('Ajustes', 'Ajustos')}</button><button class="btn" type="button" data-act="rules">${L('Reglas', 'Regles')}</button></div></div>`);
   $('panel').classList.add('menu'); cover();
 }
 
@@ -2069,12 +2069,21 @@ const TUT = {
           'En acabar la mà, cada parella suma un punt per cada carta que tinga per damunt de 20. Es juga a 40: els primers 20 són «males» i els següents, «bones».<br><br><b>Consell:</b> fixa\'t en quina carta deixa el rival de la teua esquerra; si en tens una d\'igual, bac! I en Ajustos pots posar les <b>ajudes</b>, que et diuen què passa si jugues cada carta.'] }
   ]
 };
+function showTutMenu() {
+  if (TUTG) exitGuided();
+  panelBack = 'menu';
+  showPanel(`<div class="menu" style="display:flex;flex-direction:column;gap:14px"><h2>Tutorial</h2><div class="stack">
+    <button class="btn playopt" type="button" data-act="learn"><b>${L('Aprender a jugar', 'Aprendre a jugar')}</b><small>${L('Las reglas del Coto y del Cau, paso a paso y con cartas de ejemplo', 'Les regles del Coto i del Cau, pas a pas i amb cartes d\'exemple')}</small></button>
+    <button class="btn playopt" type="button" data-act="guided"><b>${L('Partida guiada de Coto', 'Partida guiada de Coto')}</b><small>${L('Juega una mano mientras te explicamos cada jugada', 'Juga una mà mentre t\'expliquem cada jugada')}</small></button>
+  </div><div class="acts"><button class="btn" type="button" data-act="back">${L('Volver', 'Tornar')}</button></div></div>`);
+  $('panel').classList.add('menu'); cover();
+}
 function showTutorial(g, i) {
   const steps = TUT[g], st = steps[i], last = i === steps.length - 1;
   const tabs = `<div class="tabs" role="group" style="grid-template-columns:repeat(2,1fr)">${[['coto', 'Coto'], ['cau', 'Cau']].map(([k, l]) => `<button type="button" data-act="tut" data-g="${k}" data-i="0" aria-pressed="${k === g}">${l}</button>`).join('')}</div>`;
   const cards = st.cards.length ? `<div class="tcards">${st.cards.map(([id, cap, dim]) => `<div class="tc ${dim ? 'dim' : ''}">${cardHTML(coCard(id))}${cap ? `<small>${cap}</small>` : ''}</div>`).join('')}</div>` : '';
   const dots = `<div class="dots">${steps.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</div>`;
-  const prev = i > 0 ? `<button class="btn" type="button" data-act="tut" data-g="${g}" data-i="${i - 1}">${L('Anterior', 'Anterior')}</button>` : `<button class="btn" type="button" data-act="back">${L('Menú', 'Menú')}</button>`;
+  const prev = i > 0 ? `<button class="btn" type="button" data-act="tut" data-g="${g}" data-i="${i - 1}">${L('Anterior', 'Anterior')}</button>` : `<button class="btn" type="button" data-act="tutorial">${L('Volver', 'Tornar')}</button>`;
   const next = last && g === 'coto' ? `<button class="btn primary" type="button" data-act="guided">${L('Partida guiada', 'Partida guiada')}</button>` : last ? `<button class="btn primary" type="button" data-act="tut-play" data-g="${g}">${L(`Jugar al ${g === 'coto' ? 'Coto' : 'Cau'}`, `Jugar al ${g === 'coto' ? 'Coto' : 'Cau'}`)}</button>`
     : `<button class="btn primary" type="button" data-act="tut" data-g="${g}" data-i="${i + 1}">${L('Siguiente', 'Següent')}</button>`;
   showPanel(`<div class="tut" data-tut="1">${tabs}<h2>${L(st.t[0], st.t[1])}</h2>${cards}<p>${L(st.h[0], st.h[1])}</p>${dots}<div class="acts">${prev}${next}</div></div>`);
@@ -2184,7 +2193,8 @@ $('panel').addEventListener('click', e => {
   if (a === 'rules-cau' || a === 'rules-coto' || a === 'rules-cotocau') { const back = panelBack; showRules(a.slice(6)); panelBack = back; if (back === 'menu') cover(); }
   if (a === 'settings') showSettings();
   if (a === 'rules') { showRules(); panelBack = 'menu'; cover(); }
-  if (a === 'tutorial') showTutorial('coto', 0);
+  if (a === 'tutorial') showTutMenu();
+  if (a === 'learn') showTutorial('coto', 0);
   if (a === 'tut') showTutorial(b.dataset.g, +b.dataset.i);
   if (a === 'tut-play') startGame(b.dataset.g);
   if (a === 'guided') startGuided();
