@@ -214,6 +214,9 @@ button{font:inherit;color:inherit}
 .fan .fc{position:absolute;left:50%;bottom:0;transform-origin:50% 120%;--cw:74px}
 .fan .fc .card{--cw:74px;box-shadow:0 8px 18px rgba(0,0,0,.55)}
 .tut{display:flex;flex-direction:column;gap:12px}
+.coach{margin:4px 12px 0;padding:9px 12px;border:1px solid rgba(227,178,79,.55);background:rgba(227,178,79,.12);border-radius:12px;font-size:13.5px;line-height:1.4;color:var(--ink)}
+.coach b{color:var(--gold)}
+.hc.tutpick .card{box-shadow:0 0 0 3px var(--gold),0 8px 18px rgba(0,0,0,.5);transform:translateY(-8px)}
 .tut .tcards{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:6px 0}
 .tut .tc{display:flex;flex-direction:column;align-items:center;gap:4px;--cw:44px}
 .tut .tc .card{--cw:44px}
@@ -284,6 +287,7 @@ button{font:inherit;color:inherit}
       <div class="seat side" id="seat1"></div>
     </div>
   </section>
+  <div class="coach" id="coach" hidden aria-live="polite"></div>
   <div class="narr" id="narr" aria-live="polite"></div>
   <div class="you">
     <div class="hand" id="hand"></div>
@@ -690,6 +694,7 @@ function evalPlay(S, p, cid) {
 /* Niveles: fácil (solo mira lo que gana ya, y a veces se equivoca),
    normal (lo que gana menos el riesgo de que el siguiente le haga bac o capture),
    difícil (imagina repartos posibles de las cartas ocultas y simula la vuelta entera) */
+let TUTG = null;   // partida guiada en curso
 let SETTINGS = { partner: 'experto', rivals: 'experto', hints: false, labels: false, socarrat: false, speed: 1, deck: 'clasica', lang: 'es', names: ['Toni','Maria','Vicent'], cotoBest: 5, unlocked: false, showAll: false, share: null, alias: '' };
 try { Object.assign(SETTINGS, JSON.parse(localStorage.getItem('cau.settings') || '{}')); } catch (e) {}
 applyLang(SETTINGS.lang, SETTINGS.names);
@@ -1518,7 +1523,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-01-3';
+const APP_VER = 'cau-2026-11-01-4';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
@@ -1536,7 +1541,7 @@ async function shareFlush() {
   } catch (e) {} finally { shareBusy = false; }
 }
 function shareRec(rec, juego, result) {
-  if (!rec || rec.sent || !SETTINGS.share) return;
+  if (!rec || rec.sent || !SETTINGS.share || TUTG) return;
   rec.sent = true; save();   // que no se vuelva a enviar si se reabre la app en el resumen
   const datos = JSON.parse(JSON.stringify(rec)); delete datos.sent; delete datos.cur; datos.result = result;
   try {
@@ -1558,7 +1563,7 @@ function saveSettings() { SETTINGS.speed = speedIx; try { localStorage.setItem('
 const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const sleep = ms => new Promise(r => setTimeout(r, ms * SPEEDS[speedIx][1]));
 
-function save() { try { localStorage.setItem('app.v1', JSON.stringify({ mode: APP.mode, M: APP.M, S, G })); } catch (e) {} }
+function save() { if (TUTG) return; try { localStorage.setItem('app.v1', JSON.stringify({ mode: APP.mode, M: APP.M, S, G })); } catch (e) {} }
 function load() { try { const s = JSON.parse(localStorage.getItem('cau.v2') || 'null'); return s && s.hands ? s : null; } catch (e) { return null; } }
 function loadApp() { try { const a = JSON.parse(localStorage.getItem('app.v1') || 'null'); return a && a.mode ? a : null; } catch (e) { return null; } }
 
@@ -1671,6 +1676,7 @@ function renderScore(i) {
 }
 
 function render() {
+  if (!TUTG && $('coach')) $('coach').hidden = true;
   const bl = $('btnLast'); if (bl) { bl.hidden = !(isCoto() && G && G.lastTrick); bl.textContent = L('Última baza', 'Última basa'); }
   if (isCoto() && G) return renderCoto();
   $('hand').classList.remove('co-hand');
@@ -1952,11 +1958,65 @@ const LVL = () => [['facil', L('Fácil', 'Fàcil')], ['normal', 'Normal'], ['dif
 const seg = (key, opts, cur, two) => `<div class="seg ${two ? 'two' : ''} ${opts.length === 4 ? 'four' : ''}" role="group">${opts.map(([v, l]) => `<button type="button" data-set="${key}" data-val="${v}" aria-pressed="${String(cur) === String(v)}">${l}</button>`).join('')}</div>`;
 function showMenu() {
   panelBack = null;
+  if (TUTG) exitGuided();
   if (SETTINGS.share == null) return showShareAsk();
   const cont = hasSaved && savedActive() ? `<button class="btn primary" type="button" data-act="continue">${L('Continuar', 'Continuar')}<small class="contlbl">${esc(continueLabel())}</small></button>` : '';
   const fan = [[0, -24], [10, -8], [20, 8], [30, 24]].map(([id, a]) => `<div class="fc" style="transform:translateX(-50%) rotate(${a}deg)">${cardHTML(coCard(id))}</div>`).join('');
-  showPanel(`<div class="menu" style="display:flex;flex-direction:column;gap:14px"><div class="fan" aria-hidden="true">${fan}</div><div class="logo">CotoCau</div><p class="tag">Els jocs de cartes de les filaes d'Alcoi</p><p class="desc" style="text-align:center;opacity:.6;margin:0">v. ${APP_VER.replace('cau-', '')}</p><div class="stack">${cont}<button class="btn ${cont ? '' : 'primary'}" type="button" data-act="play">${L('Jugar', 'Jugar')}</button><button class="btn" type="button" data-act="tutorial">${L('Aprender a jugar', 'Aprendre a jugar')}</button><button class="btn" type="button" data-act="settings">${L('Ajustes', 'Ajustos')}</button><button class="btn" type="button" data-act="rules">${L('Reglas', 'Regles')}</button></div></div>`);
+  showPanel(`<div class="menu" style="display:flex;flex-direction:column;gap:14px"><div class="fan" aria-hidden="true">${fan}</div><div class="logo">CotoCau</div><p class="tag">Els jocs de cartes de les filaes d'Alcoi</p><p class="desc" style="text-align:center;opacity:.6;margin:0">v. ${APP_VER.replace('cau-', '')}</p><div class="stack">${cont}<button class="btn ${cont ? '' : 'primary'}" type="button" data-act="play">${L('Jugar', 'Jugar')}</button><button class="btn" type="button" data-act="tutorial">${L('Aprender a jugar', 'Aprendre a jugar')}</button><button class="btn" type="button" data-act="guided">${L('Partida guiada de Coto', 'Partida guiada de Coto')}</button><button class="btn" type="button" data-act="settings">${L('Ajustes', 'Ajustos')}</button><button class="btn" type="button" data-act="rules">${L('Reglas', 'Regles')}</button></div></div>`);
   $('panel').classList.add('menu'); cover();
+}
+
+
+/* ---------------- Partida guiada (Coto) ---------------- */
+// reparto preparado: reparte Vicent, sales tú, pintan oros (rey de oros) y tú tienes el 7 de oros y rey y sota de espadas
+const TUT_ME = { 0: 13, 1: 1, 2: 16, 3: 22 };                       // 4 de copas, 2 de oros, 7 de copas, 3 de espadas
+const TUT_BOTS = { 0: { 1: 15, 2: 12, 3: 11 }, 1: { 2: 34, 3: 30, 1: 33 }, 2: { 1: 10, 2: 14, 3: 19 }, 3: { 1: 32, 2: 4, 3: 36 }, 4: { 2: 23, 3: 28 } };
+function startGuided() {
+  TUTG = { trickNo: 0 }; GEN++; busy = false; coDealView = null; dealView = null; fx = null; coFx = null; coShowLast = false; coHide = new Set(); coPend = 0; coReveal = false;
+  APP.mode = 'coto'; APP.M = null; closePanel();
+  G = cotoNewMatch(1, 3); G.rec = null;
+  const hands = [[13, 16, 6, 1, 29, 27], [15, 10, 33, 32, 21, 35], [12, 34, 14, 4, 23, 3], [11, 30, 19, 36, 28, 5]];
+  G.hands = hands.map(h => h.map(id => ({ ...coCard(id) })));
+  G.dealOrder = hands[0].slice();
+  G.pinta = coCard(9); G.trump = 0;
+  G.stock = [8, 2, 22, 24, 31, 25, 7, 18, 26, 37, 38, 17, 39, 20, 0].map(id => ({ ...coCard(id) })).concat([G.pinta]);
+  G.hands.forEach(h => coSort(G, h)); G.leader = 0; G.turn = 0;
+  narr = '';
+  beginCoto();
+}
+function exitGuided() {
+  TUTG = null; GEN++; busy = false; coDealView = null; coFx = null; coShowLast = false; coHide = new Set(); coPend = 0; coReveal = false;
+  const a = loadApp();
+  if (a) { APP.mode = a.mode; APP.M = a.M; S = a.S || newGame(); G = a.G; S.feed = S.feed || []; if (G) G.feed = []; }
+  else { APP.mode = 'cau'; APP.M = null; S = newGame(); S.feed = []; G = null; }
+  hasSaved = savedActive(); $('coach').hidden = true;
+}
+function tutCoach() {
+  if (!TUTG) return '';
+  TUTG.trickNo = G.trickNo;
+  const N = NAMES, k = G.trickNo, t = G.trick.length, me = G.turn === 0 && G.phase === 'play' && !busy;
+  if (coDealView) return L('<b>Partida guiada.</b> Reparte Vicent: 6 cartas a cada uno. La carta que queda boca arriba bajo el montón es la <b>pinta</b>: marca el triunfo.', '<b>Partida guiada.</b> Reparteix Vicent: 6 cartes a cadascú. La carta que queda cap per amunt davall del munt és la <b>pinta</b>: marca el triomf.').replace('Vicent', N[3]);
+  if (G.phase !== 'play') return L('Fin de la mano.', 'Final de la mà.');
+  if (k === 0) return me ? L(`Pintan <b>oros</b> (el rey de oros está bajo el montón). Sales tú: echa una carta baja, el <b>4 de copas</b>, para no arriesgar puntos.`, `Pinten <b>oros</b> (el rei d'oros està davall del munt). Ixes tu: tira una carta baixa, el <b>4 de copes</b>, per a no arriscar punts.`)
+    : L(`Cada uno echa una carta. Gana la más alta del palo que ha salido (copas), salvo que alguien eche triunfo. Fíjate en lo que echa ${N[2]}…`, `Cadascú tira una carta. Guanya la més alta del pal que ha eixit (copes), llevat que algú tire triomf. Fixa't en què tira ${N[2]}…`);
+  if (k === 1 && !t && (coCantesFor(G, 0).length || coCanSwap(G, 0))) return L(`¡${N[2]} ha ganado con el 3 de copas! Como tu pareja ha ganado una baza:<br>• Tienes <b>rey y sota de espadas</b>: pulsa <b>Cantar 20 en espadas</b>.<br>• Tienes el <b>7 de triunfo</b> y la pinta es el rey: pulsa <b>Cambiar el 7</b> y te quedas el rey de oros.`, `${N[2]} ha guanyat amb el 3 de copes! Com que la teua parella ha guanyat una basa:<br>• Tens <b>rei i sota d'espases</b>: prem <b>Cantar 20 en espases</b>.<br>• Tens el <b>7 de triomf</b> i la pinta és el rei: prem <b>Canviar el 7</b> i et quedes el rei d'oros.`);
+  if (k === 1) return me ? L(`${N[3]} ha echado el <b>as de bastos</b> (11 puntos). Tú no tienes bastos, pero puedes <b>fallar</b>: el <b>2 de oros</b> es triunfo y gana a cualquier carta de otro palo. ¡Échalo!`, `${N[3]} ha tirat l'<b>as de bastos</b> (11 punts). Tu no tens bastos, però pots <b>fallar</b>: el <b>2 d'oros</b> és triomf i guanya a qualsevol carta d'un altre pal. Tira'l!`)
+    : L('Después de cada baza todos roban una carta, empezando por quien la ha ganado. Sale quien ganó.', 'Després de cada basa tots roben una carta, començant per qui l\'ha guanyada. Ix qui la va guanyar.');
+  if (k === 2) return me ? L('Has ganado tú la baza anterior, así que sales tú. Echa el <b>7 de copas</b>.', 'Has guanyat tu la basa anterior, així que ixes tu. Tira el <b>7 de copes</b>.')
+    : !t ? L('Juegan los demás…', 'Juguen els altres…') : L(`${N[1]} mata con el <b>as de copas</b>. Mira lo que hace ${N[3]}: como la baza ya es de su compañero, le <b>carga</b> puntos.`, `${N[1]} mata amb l'<b>as de copes</b>. Mira què fa ${N[3]}: com que la basa ja és del seu company, li <b>carrega</b> punts.`);
+  if (k === 3) return me ? L(`Es la <b>última baza con montón</b>. ${N[2]} ha fallado con el 5 de oros y va ganando, y tú eres el último. Cuando la baza es de tu compañera, <b>cárgale</b>: echa el <b>3 de espadas</b> (10 puntos).`, `És l'<b>última basa amb munt</b>. ${N[2]} ha fallat amb el 5 d'oros i va guanyant, i tu eres l'últim. Quan la basa és de la teua companya, <b>carrega-li</b>: tira el <b>3 d'espases</b> (10 punts).`)
+    : L(`${N[1]} sale con el 3 de bastos (10 puntos). A ver qué hace ${N[2]}…`, `${N[1]} ix amb el 3 de bastos (10 punts). A vore què fa ${N[2]}…`);
+  if (k === 4) return me ? L(`<b>Arrastre:</b> ya no queda montón y hay que <b>seguir el palo</b> y <b>superar al rival</b> si se puede. ${N[3]} gana con el caballo de espadas: solo puedes echar el <b>rey</b> o la <b>sota de espadas</b> (las demás salen apagadas). Elige una.`, `<b>Arrossegament:</b> ja no queda munt i cal <b>seguir el pal</b> i <b>superar el rival</b> si es pot. ${N[3]} guanya amb el cavall d'espases: només pots tirar el <b>rei</b> o la <b>sota d'espases</b> (les altres ixen apagades). Tria'n una.`)
+    : L('Se acabó el montón: empieza el <b>arrastre</b>. A partir de ahora hay que seguir el palo y, si gana un rival, superarle (o fallar con triunfo si no tienes del palo).', 'S\'ha acabat el munt: comença l\'<b>arrossegament</b>. A partir d\'ara cal seguir el pal i, si guanya un rival, superar-lo (o fallar amb triomf si no tens del pal).');
+  return me ? L('Ahora sigue tú solo. Recuerda: seguir el palo, superar al rival si se puede y, si gana tu compañera, cualquier carta del palo. <b>Las 10 de últimas</b> son para quien gane la última baza.', 'Ara continua tu sol. Recorda: seguir el pal, superar el rival si es pot i, si guanya la teua companya, qualsevol carta del pal. <b>Les 10 d\'últimes</b> són per a qui guanye l\'última basa.')
+    : L('Juegan los demás… Fíjate en qué triunfos van saliendo.', 'Juguen els altres… Fixa\'t en quins triomfs van eixint.');
+}
+function showGuidedEnd() {
+  const H = G.handSummary || [{ total: G.score[0] }, { total: G.score[1] }];
+  showPanel(`<h2>${L('¡Ya sabes jugar al Coto!', 'Ja saps jugar al Coto!')}</h2>
+  <p class="big-result">${TEAMN[0]} ${G.score[0]} · ${TEAMN[1]} ${G.score[1]}</p>
+  <p>${L('En una partida de verdad se sigue jugando manos hasta que una pareja llega a 101 puntos (si nadie llega, se juega otra mano <b>de vueltas</b>), y el coto se gana al mejor de 5 partidas. Las reglas completas están en Reglas.', 'En una partida de veritat es continuen jugant mans fins que una parella arriba a 101 punts (si ningú no hi arriba, es juga una altra mà <b>de voltes</b>), i el coto es guanya al millor de 5 partides. Les regles completes estan en Regles.')}</p>
+  <div class="acts"><button class="btn" type="button" data-act="menu">${L('Menú', 'Menú')}</button><button class="btn primary" type="button" data-act="tut-play" data-g="coto">${L('Jugar al Coto', 'Jugar al Coto')}</button></div>`);
 }
 
 /* ---------------- Tutorial ---------------- */
@@ -2015,7 +2075,7 @@ function showTutorial(g, i) {
   const cards = st.cards.length ? `<div class="tcards">${st.cards.map(([id, cap, dim]) => `<div class="tc ${dim ? 'dim' : ''}">${cardHTML(coCard(id))}${cap ? `<small>${cap}</small>` : ''}</div>`).join('')}</div>` : '';
   const dots = `<div class="dots">${steps.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</div>`;
   const prev = i > 0 ? `<button class="btn" type="button" data-act="tut" data-g="${g}" data-i="${i - 1}">${L('Anterior', 'Anterior')}</button>` : `<button class="btn" type="button" data-act="back">${L('Menú', 'Menú')}</button>`;
-  const next = last ? `<button class="btn primary" type="button" data-act="tut-play" data-g="${g}">${L(`Jugar al ${g === 'coto' ? 'Coto' : 'Cau'}`, `Jugar al ${g === 'coto' ? 'Coto' : 'Cau'}`)}</button>`
+  const next = last && g === 'coto' ? `<button class="btn primary" type="button" data-act="guided">${L('Partida guiada', 'Partida guiada')}</button>` : last ? `<button class="btn primary" type="button" data-act="tut-play" data-g="${g}">${L(`Jugar al ${g === 'coto' ? 'Coto' : 'Cau'}`, `Jugar al ${g === 'coto' ? 'Coto' : 'Cau'}`)}</button>`
     : `<button class="btn primary" type="button" data-act="tut" data-g="${g}" data-i="${i + 1}">${L('Siguiente', 'Següent')}</button>`;
   showPanel(`<div class="tut" data-tut="1">${tabs}<h2>${L(st.t[0], st.t[1])}</h2>${cards}<p>${L(st.h[0], st.h[1])}</p>${dots}<div class="acts">${prev}${next}</div></div>`);
   panelBack = 'menu'; cover();
@@ -2127,6 +2187,7 @@ $('panel').addEventListener('click', e => {
   if (a === 'tutorial') showTutorial('coto', 0);
   if (a === 'tut') showTutorial(b.dataset.g, +b.dataset.i);
   if (a === 'tut-play') startGame(b.dataset.g);
+  if (a === 'guided') startGuided();
   if (a === 'devpw') { const v = ($('devpw') || {}).value || ''; if (v.trim().toLowerCase() === 'alcoi') devOpen = true; else devBad = true; showSettings(); }
   if (a === 'back') showMenu();
   if (a === 'nexthand') { S.dealer = (S.dealer + 1) % 4; newHand(S); S.feed = []; narr = L(`Mano ${S.handNo}. Reparte ${NAMES[S.dealer]}.`, `Mà ${S.handNo}. Reparteix ${NAMES[S.dealer]}.`); closePanel(); beginHand(); }
@@ -2172,6 +2233,7 @@ function renderCoto() {
   [1, 2, 3].forEach(coRenderSeat);
   coRenderTable(); coRenderHand(); coRenderBottom();
   $('narr').innerHTML = narr;
+  $('coach').hidden = !TUTG; if (TUTG) $('coach').innerHTML = tutCoach();
   if (['handEnd', 'partidaEnd', 'cotoEnd'].includes(G.phase) && $('overlay').hidden && !busy) showCotoSummary();
 }
 function renderCotoInfo() {
@@ -2205,13 +2267,18 @@ function coRenderTable() {
   }
   $('table').innerHTML = h;
 }
-function coMyLegal() { return G.phase === 'play' && G.turn === 0 && !busy && !coDealView ? coLegal(G, 0).map(c => c.id) : []; }
+function coMyLegal() {
+  const l = G.phase === 'play' && G.turn === 0 && !busy && !coDealView ? coLegal(G, 0).map(c => c.id) : [];
+  const want = TUTG ? TUT_ME[G.trickNo] : null;
+  if (want != null && l.includes(want)) { if (G.trickNo === 1 && (coCantesFor(G, 0).length || coCanSwap(G, 0))) return []; return [want]; }
+  return l;
+}
 function coRenderHand() {
   if (!isCoto()) return;
-  const legal = coMyLegal(), n = coDealView ? coDealView.n[0] : 6;
+  const legal = coMyLegal(), n = coDealView ? coDealView.n[0] : 6, pick = TUTG && legal.length === 1 && TUT_ME[G.trickNo] != null ? legal[0] : null;
   $('hand').classList.add('co-hand');
   const order = coDealView && G.dealOrder ? G.dealOrder.map(id => G.hands[0].find(c => c.id === id)).filter(Boolean) : G.hands[0];
-  $('hand').innerHTML = order.filter(c => !coHide.has(c.id)).slice(0, n).map(c => `<button class="hc" type="button" data-id="${c.id}" ${legal.includes(c.id) ? '' : 'disabled'}>${cardHTML(c)}</button>`).join('');
+  $('hand').innerHTML = order.filter(c => !coHide.has(c.id)).slice(0, n).map(c => `<button class="hc ${c.id === pick ? 'tutpick' : ''}" type="button" data-id="${c.id}" ${legal.includes(c.id) ? '' : 'disabled'}>${cardHTML(c)}</button>`).join('');
 }
 function coRenderBottom() {
   const el = $('bottom');
@@ -2298,12 +2365,14 @@ async function cotoLoop() {
       for (let i = 0; i < 4; i++) { const q = (G.turn + i) % 4; if (q === 0) continue; const ss = coCantesFor(G, q); if (ss.length) { for (const s of ss) coSing(G, q, s); sang = true; } }
       if (sang) { render(); await coDrain(); continue; }
       if (coCantesFor(G, 0).length && G.cantePass !== G.trickNo && G.turn !== 0) break;
+      if (TUTG && G.trickNo === 1 && !G.trick.length && coCanSwap(G, 0)) break;
       if (G.turn === 0) break;
       render(); await sleep(650);
       const p = G.turn;
       if (coCanSwap(G, p)) { await coAnimSwap(p); await coDrain(); }
       await sleep(350);
-      await coDoPlay(p, coBotChoose(G, p, levelOf(p)));
+      const forced = TUTG && TUT_BOTS[G.trickNo] ? TUT_BOTS[G.trickNo][p] : null;
+      await coDoPlay(p, forced != null ? forced : coBotChoose(G, p, levelOf(p)));
     }
   } finally { if (gen === GEN) { busy = false; save(); render(); } }
 }
@@ -2357,6 +2426,7 @@ async function beginCoto() {
   render(); cotoLoop();
 }
 function showCotoSummary() {
+  if (TUTG) return showGuidedEnd();
   shareRec(G.rec, 'coto', { score: G.score.slice(), phase: G.phase, partidaWinner: G.partidaWinner ?? null, wins: G.wins.slice(), mid: !!G.endMid, summary: G.handSummary || null });
   const H = G.handSummary || [{ pts: 0, cantes: 0, ultimas: 0, total: 0 }, { pts: 0, cantes: 0, ultimas: 0, total: 0 }];
   const row = (l, k) => `<tr><td>${l}</td><td>${H[0][k]}</td><td>${H[1][k]}</td></tr>`;
@@ -2429,7 +2499,7 @@ function matchTiebreak() {
 }
 let GEN = 0;
 function startGame(mode) {
-  GEN++; busy = false; coDealView = null; dealView = null; fx = null; coFx = null; coShowLast = false; coHide = new Set(); coPend = 0; coReveal = false;
+  TUTG = null; GEN++; busy = false; coDealView = null; dealView = null; fx = null; coFx = null; coShowLast = false; coHide = new Set(); coPend = 0; coReveal = false;
   APP.mode = mode; APP.M = mode === 'cotocau' ? { stage: 'coto', cur: 'coto', res: {} } : null;
   hasSaved = true; closePanel();
   if (mode === 'cau') { S = newGame(); S.feed = []; narr = L(`Mano 1. Reparte ${NAMES[S.dealer]}.`, `Mà 1. Reparteix ${NAMES[S.dealer]}.`); beginHand(); return; }
