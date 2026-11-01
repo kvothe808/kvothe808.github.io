@@ -1623,11 +1623,22 @@ function coSureExit(G, p, all) {
   }
   return best ? best.id : null;
 }
+// entre cartas equivalentes del mismo palo (sin ninguna por salir entre ellas), si gano la baza seguro echo la que más puntos vale
+function coEquivPoints(G, p, id) {
+  if (G.trick.length !== 3) return id;
+  const c = coCard(id), w = coTrickWinner(G, G.trick);
+  if (!coBeats(c, w.c, G.trump)) return id;
+  const gone = new Set(G.played); G.trick.forEach(x => gone.add(x.c.id));
+  const legal = coLegal(G, p).filter(x => x.s === c.s && coBeats(x, w.c, G.trump));
+  const between = (a, b) => { const lo = Math.min(CSTR[a.r], CSTR[b.r]), hi = Math.max(CSTR[a.r], CSTR[b.r]); for (let r = 0; r < 10; r++) { const st = CSTR[r]; if (st > lo && st < hi && !gone.has(c.s * 10 + r) && !G.hands[p].some(x => x.s === c.s && x.r === r)) return true; } return false; };
+  let best = c; for (const x of legal) if (!between(x, c) && CPTS[x.r] > CPTS[best.r]) best = x;
+  return best.id;
+}
 function coBotChoose(G, p, lvl) {
   if (lvl === 'experto' || lvl === 'dificil') { const x = coSureExit(G, p); if (x != null) return x; }   // salirse ya si es seguro
   if (lvl === 'facil') return coBotEasy(G, p);
   if (lvl === 'dificil') return coBotBest(G, p);
-  if (lvl === 'experto') return coBotExpert(G, p);
+  if (lvl === 'experto') return coEquivPoints(G, p, coBotExpert(G, p));
   return coBotNormal(G, p);
 }
 // Los bots cantan siempre que pueden, salvo en la mano de vueltas si cantar no les sirve para salirse
@@ -1681,7 +1692,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-02-1';
+const APP_VER = 'cau-2026-11-02-2';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
