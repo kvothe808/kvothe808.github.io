@@ -1276,7 +1276,7 @@ function coDeterminize0(G, p) {
   return null;
 }
 function coRolloutValue(d, t) { return (d.pts[t] + d.cantes[t]) - (d.pts[1 - t] + d.cantes[1 - t]); }
-const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12, noLead: true, minTrumpPts: 10, solve: 6, protect: true, deepLast: 8, discW: 1, signals: false, markW: 6, noGift: true, N: 80, refine: 12, refineN: 400, refineMs: 250, winW: 60, vueltasScale: 0.2 };
+const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12, noLead: true, minTrumpPts: 10, solve: 7, protect: true, deepLast: 8, discW: 1, signals: false, markW: 6, noGift: true, N: 80, refine: 12, refineN: 400, refineMs: 250, winW: 60, vueltasScale: 0.2 };
 // Muy difícil. El metajuego cambia según el momento:
 // · mano normal, con montón: se guardan los triunfos para el arrastre y nunca se sale de triunfo;
 // · arrastre: se puede salir de triunfo para quitar los de los rivales;
@@ -1353,9 +1353,108 @@ function coSolveArr(hands, trick, turn, tr, opt) {
   return t0.length === 4 ? complete(t0, -1e9, 1e9) : rec(t0, turn, -1e9, 1e9);
 }
 // Valor de jugar c (para el equipo de p, en puntos de diferencia) en un reparto conocido
+// Solver rápido del arrastre: manos como máscaras de bits por palo (en orden de fuerza), tabla de transposición numérica.
+const FS_STR = [9, 0, 8, 1, 2, 3, 4, 6, 5, 7];                         // fuerza de cada índice de carta (CSTR)
+const FS_IDX = []; FS_STR.forEach((st, r) => FS_IDX[st] = r);          // índice de carta por fuerza
+const FS_PTS = FS_IDX.map(r => [11, 0, 10, 0, 0, 0, 0, 3, 2, 4][r]);   // puntos por fuerza
+function coSolveFast(hands, trick, turn, tr, opt) {
+  // H[p][s]: máscara de 10 bits, bit k = carta de fuerza k
+  const H = [0, 1, 2, 3].map(() => [0, 0, 0, 0]);
+  let left = 0;
+  hands.forEach((h, p) => h.forEach(c => { H[p][c.s] |= 1 << FS_STR[c.r]; left++; }));
+  let sungM = 0; (opt && opt.sung || []).forEach(s => sungM |= 1 << s);
+  const vu = !!(opt && opt.vueltas), sc = opt && opt.score ? opt.score.slice() : [0, 0];
+  const REY = FS_STR[9], SOTA = FS_STR[7];
+  const TT = new Map();
+  const T = trick.map(x => ({ p: x.p, s: x.c.s, k: FS_STR[x.c.r] }));
+  // ¿a gana a b? (a jugada después)
+  const beats = (as, ak, bs, bk) => as === bs ? ak > bk : as === tr;
+  function winnerIdx(t) { let w = 0; for (let i = 1; i < t.length; i++) if (beats(t[i].s, t[i].k, t[w].s, t[w].k)) w = i; return w; }
+  // movimientos legales como lista [s,k]
+  function moves(p, t) {
+    const h = H[p], out = [];
+    const pushMask = (s, m) => {
+      // cartas equivalentes: si entre dos cartas mías del mismo palo no queda ninguna de otro jugador y valen lo mismo, basta con probar una
+      let others = (H[0][s] | H[1][s] | H[2][s] | H[3][s]) & ~h[s]; for (const x of t) if (x.s === s) others |= 1 << x.k;
+      let prevK = -1;
+      while (m) { const k = 31 - Math.clz32(m); m &= ~(1 << k);
+        if (prevK >= 0 && FS_PTS[k] === FS_PTS[prevK] && !(others & (((1 << prevK) - 1) & ~((1 << (k + 1)) - 1)))) { prevK = k; continue; }
+        out.push(s, k); prevK = k; }
+      return out; };
+    const all = () => { for (let s = 0; s < 4; s++) if (h[s]) pushMask(s, h[s]); return out; };
+    if (!t.length) return all();
+    const ls = t[0].s, wi = winnerIdx(t), w = t[wi], partner = ((w.p ^ p) & 1) === 0;
+
+    if (h[ls]) {
+      if (partner) return pushMask(ls, h[ls]);
+      if (w.s === ls) { const better = h[ls] & ~((1 << (w.k + 1)) - 1); return pushMask(ls, better || h[ls]); }
+      return pushMask(ls, h[ls]);   // gana un triunfo y yo tengo del palo: no puedo superarlo con el palo
+    }
+    if (partner) return all();
+    if (!h[tr]) return all();
+    if (w.s === tr) { const over = h[tr] & ~((1 << (w.k + 1)) - 1); if (over) return pushMask(tr, over); return all(); }
+    return pushMask(tr, h[tr]);
+  }
+  let lo = 0, hi = 0;   // máscara global de cartas que quedan (para la clave)
+  for (let p = 0; p < 4; p++) for (let s = 0; s < 4; s++) { if (s < 2) lo |= H[p][s] << (s * 10); else hi |= H[p][s] << ((s - 2) * 10); }
+  function complete(t, a, b) {
+    const wi = winnerIdx(t), wp = t[wi].p, Tm = wp & 1;
+    let pts = FS_PTS[t[0].k] + FS_PTS[t[1].k] + FS_PTS[t[2].k] + FS_PTS[t[3].k]; if (left === 0) pts += 10;
+    let ns = 0;
+    if (left > 0) for (const q of [Tm, Tm + 2]) for (let s = 0; s < 4; s++) if (!(sungM >> s & 1) && !(ns >> s & 1) && (H[q][s] >> REY & 1) && (H[q][s] >> SOTA & 1)) { ns |= 1 << s; pts += s === tr ? 40 : 20; }
+    const g = Tm === 0 ? pts : -pts;
+    sc[Tm] += pts; sungM |= ns;
+    let v;
+    if (!vu && left === 0 && (sc[0] > 100 || sc[1] > 100)) { const w = sc[0] > 100 && sc[1] > 100 ? Tm : (sc[0] > 100 ? 0 : 1); v = g + (w === 0 ? 1000 : -1000); }
+    else if (vu && sc[Tm] >= 101) v = g + (Tm === 0 ? 1000 : -1000);
+    else v = g + search([], wp, a - g, b - g);
+    sc[Tm] -= pts; sungM &= ~ns;
+    return v;
+  }
+  function search(t, p, a, b) {
+    if (left === 0) return 0;
+    let key = -1, a0 = a, b0 = b;
+    if (!t.length) {
+      key = ((hi * 1048576 + lo) * 4 + p) * 16 + sungM;
+      const o = TT.get(key), e = o && o[sc[0] * 512 + sc[1]];
+      if (e !== undefined && ((e & 3) === 0 || ((e & 3) === 1 && (e >> 2) >= b) || ((e & 3) === 2 && (e >> 2) <= a))) return e >> 2;
+    }
+    const mv = moves(p, t), n = mv.length / 2, max = (p & 1) === 0;
+    // orden: primero cartas con puntos y fuertes
+    const ord = []; for (let i = 0; i < n; i++) ord.push(i);
+    ord.sort((x, y) => (FS_PTS[mv[2 * y + 1]] * 2 + mv[2 * y + 1] + (mv[2 * y] === tr ? 6 : 0)) - (FS_PTS[mv[2 * x + 1]] * 2 + mv[2 * x + 1] + (mv[2 * x] === tr ? 6 : 0)));
+    let best = max ? -1e9 : 1e9;
+    for (const i of ord) {
+      const s = mv[2 * i], k = mv[2 * i + 1], bit = 1 << k, gb = s < 2 ? 1 << (s * 10 + k) : 0, hb = s >= 2 ? 1 << ((s - 2) * 10 + k) : 0;
+      H[p][s] &= ~bit; left--; lo &= ~gb; hi &= ~hb;
+      t.push({ p, s, k });
+      const v = t.length === 4 ? complete(t, a, b) : search(t, (p + 1) & 3, a, b);
+      t.pop(); H[p][s] |= bit; left++; lo |= gb; hi |= hb;
+      if (max) { if (v > best) best = v; if (best > a) a = best; } else { if (v < best) best = v; if (best < b) b = best; }
+      if (a >= b) break;
+    }
+    if (key >= 0) {
+      const f = best <= a0 ? 2 : best >= b0 ? 1 : 0, e = best * 4 + f;
+      let o = TT.get(key); if (!o) TT.set(key, o = {}); o[sc[0] * 512 + sc[1]] = e;
+    }
+    return best;
+  }
+  if (opt && opt.root) {   // valor exacto de cada opción del jugador que tiene el turno (comparten la tabla)
+    const p = turn, out = {};
+    for (const c of opt.root) {
+      const s = c.s, k = FS_STR[c.r], bit = 1 << k, gb = s < 2 ? 1 << (s * 10 + k) : 0, hb = s >= 2 ? 1 << ((s - 2) * 10 + k) : 0;
+      H[p][s] &= ~bit; left--; lo &= ~gb; hi &= ~hb; T.push({ p, s, k });
+      out[c.id] = T.length === 4 ? complete(T, -1e9, 1e9) : search(T, (p + 1) & 3, -1e9, 1e9);
+      T.pop(); H[p][s] |= bit; left++; lo |= gb; hi |= hb;
+    }
+    return out;
+  }
+  return T.length === 4 ? complete(T, -1e9, 1e9) : search(T, turn, -1e9, 1e9);
+}
+
 function coSolveOption(d, p, c) {
   const H = d.hands.map(h => h.slice()); H[p] = H[p].filter(x => x.id !== c.id);
-  const v = coSolveArr(H, d.trick.concat([{ p, c }]), (p + 1) & 3, d.trump, { sung: d.sung, vueltas: d.vueltas, score: d.score, won: d.won });
+  const v = coSolveFast(H, d.trick.concat([{ p, c }]), (p + 1) & 3, d.trump, { sung: d.sung, vueltas: d.vueltas, score: d.score });
   return team(p) === 0 ? v : -v;
 }
 
@@ -1371,7 +1470,7 @@ function coDeepVals(G, p, ids, N) {
       let v;
       if (sim.phase === 'play' && sim.hands[sim.turn].length) {
         for (let i = 0; i < 4; i++) for (const s of coCantesFor(sim, i)) coSing(sim, i, s);
-        const r = coSolveArr(sim.hands, sim.trick, sim.turn, sim.trump, { sung: sim.sung, vueltas: sim.vueltas, score: sim.score, won: sim.won });
+        const r = coSolveFast(sim.hands, sim.trick, sim.turn, sim.trump, { sung: sim.sung, vueltas: sim.vueltas, score: sim.score });
         v = (sim.score[t] - sim.score[1 - t]) - base + (t === 0 ? r : -r);
       } else { v = (sim.score[t] - sim.score[1 - t]) - base; if (sim.partidaWinner != null) v += sim.partidaWinner === t ? 1000 : -1000; }
       o[id] += v;
@@ -1421,8 +1520,12 @@ function coBotExpert(G, p, N = CO_EXP.N || 40) {
   }
   // al final del arrastre se calcula exacto (doble mudo) sobre cada reparto posible de las cartas ocultas
   if (arr && CO_EXP.solve && (G.hands[p].length < CO_EXP.solve || (G.hands[p].length === CO_EXP.solve && G.trick.length))) {
-    const M = [0, 100, 100, 100, 80, 30, 12][G.hands[p].length], sum = {}; legal.forEach(c => sum[c.id] = 0); let m = 0; const ts = Date.now();
-    for (let k = 0; k < M && (k < 12 || Date.now() - ts < 500); k++) { const d = coDeterminize(G, p); if (!d) continue; m++; for (const c of legal) sum[c.id] += coSolveOption(d, p, c); }
+    const nc = G.hands[p].length, M = [0, 150, 150, 150, 120, 60, 24][nc], sum = {}; legal.forEach(c => sum[c.id] = 0); let m = 0; const ts = Date.now();
+    for (let k = 0; k < M && (k < (nc >= 6 ? 4 : 12) || Date.now() - ts < 700); k++) {
+      const d = coDeterminize(G, p); if (!d) continue; m++;
+      const r = coSolveFast(d.hands, d.trick, p, d.trump, { sung: d.sung, vueltas: d.vueltas, score: d.score, root: legal });
+      for (const c of legal) sum[c.id] += team(p) === 0 ? r[c.id] : -r[c.id];
+    }
     if (m) { let best = null, bv = -1e9; for (const c of legal) { const v = sum[c.id] / m - 0.01 * (CSTR[c.r] + (c.s === G.trump ? 10 : 0)) + Math.random() * 1e-4; if (v > bv) { bv = v; best = c.id; } } return best; }   // a igualdad, se guarda la carta fuerte
   }
   // mano de vueltas, con montón: si gana mi compañero y aún juega un rival detrás, protejo la baza con el triunfo más bajo
@@ -1565,7 +1668,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-01-13';
+const APP_VER = 'cau-2026-11-01-14';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
