@@ -1467,7 +1467,7 @@ function coBotExpert(G, p, N = CO_EXP.N || 40) {
   const k = G.vueltas ? CO_EXP.vueltasScale : 1;
   const pen = c => arr || c.s !== G.trump ? 0 : k * (CO_EXP.trumpPen + CSTR[c.r] * CO_EXP.trumpPen / 10 + (lead ? CO_EXP.leadPen + (CSTR[c.r] >= 8 ? CO_EXP.leadPen : 0) : 0));
   // como en la mesa: en la última baza con montón y pinta gorda sin cambiar, si no tengo el 7, no gano la baza (que la pinta caiga en mi pareja)
-  if (G.stock.length === 4 && !G.swapped && C_CAMBIABLE.includes(G.pinta.r) && !G.hands[p].some(c => c.s === G.trump && c.r === C_SIETE) && G.trick.length) {
+  if (G.stock.length === 4 && !G.swapped && C_CAMBIABLE.includes(G.pinta.r) && !G.hands[p].some(c => c.s === G.trump && c.r === C_SIETE) && G.trick.length && G.trick.reduce((a, x) => a + CPTS[x.c.r], 0) < 15) {
     const w = coTrickWinner(G, G.trick), myTeamWins = team(w.p) === t;
     const keepsLoss = legal.filter(c => myTeamWins ? true : !coBeats(c, w.c, G.trump));
     if (!myTeamWins && keepsLoss.length && keepsLoss.length < legal.length) { let b = null, bv = -1e9; for (const c of keepsLoss) { const v = tot[c.id] / n - pen(c); if (v > bv) { bv = v; b = c.id; } } return b; }
@@ -1565,7 +1565,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-01-12';
+const APP_VER = 'cau-2026-11-01-13';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
