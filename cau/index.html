@@ -207,6 +207,25 @@ button{font:inherit;color:inherit}
 .draw-card .card{--cw:90px;animation:flip 1.1s ease-out both}
 @keyframes flip{0%{transform:rotateY(90deg) scale(.6);opacity:0}60%{transform:rotateY(0) scale(1.05);opacity:1}100%{transform:none}}
 .menu{align-items:stretch;text-align:center}
+.overlay.cover{background:radial-gradient(ellipse at 50% 30%,#5a1622 0%,#2a0a11 55%,#140407 100%);align-items:center}
+.overlay.cover .panel{background:transparent;border:0;box-shadow:none;max-width:460px}
+.overlay.cover .panel:not(.menu){background:rgba(20,5,9,.86);border:1px solid rgba(227,178,79,.35)}
+.fan{position:relative;height:150px;margin:4px auto 0;width:260px}
+.fan .fc{position:absolute;left:50%;bottom:0;transform-origin:50% 120%;--cw:74px}
+.fan .fc .card{--cw:74px;box-shadow:0 8px 18px rgba(0,0,0,.55)}
+.tut{display:flex;flex-direction:column;gap:12px}
+.tut .tcards{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:6px 0}
+.tut .tc{display:flex;flex-direction:column;align-items:center;gap:4px;--cw:44px}
+.tut .tc .card{--cw:44px}
+.tut .tc small{font-size:11.5px;font-weight:700;color:var(--gold)}
+.tut .tc.dim{opacity:.55}
+.tut p{margin:0;line-height:1.45}
+.tut .step{font-size:12px;color:var(--ink-soft);text-align:center}
+.tut .dots{display:flex;gap:5px;justify-content:center}
+.tut .dots i{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.2)}
+.tut .dots i.on{background:var(--gold)}
+.devlock{display:flex;gap:8px;align-items:center}
+.devlock input{flex:1;min-width:0;font:600 16px var(--f-body);color:var(--ink);background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
 .menu .logo{font:800 56px/1 var(--f-display);color:var(--gold);letter-spacing:.04em;text-shadow:0 3px 0 #120408}
 .menu .tag{color:var(--ink-soft);font-size:14px;margin:-6px auto 4px}
 .menu .stack{display:flex;flex-direction:column;gap:10px}
@@ -671,7 +690,7 @@ function evalPlay(S, p, cid) {
 /* Niveles: fácil (solo mira lo que gana ya, y a veces se equivoca),
    normal (lo que gana menos el riesgo de que el siguiente le haga bac o capture),
    difícil (imagina repartos posibles de las cartas ocultas y simula la vuelta entera) */
-let SETTINGS = { partner: 'experto', rivals: 'normal', hints: false, labels: false, socarrat: false, speed: 1, deck: 'moderna', lang: 'es', names: ['Toni','Maria','Vicent'], cotoBest: 5, unlocked: false, showAll: false, share: null, alias: '' };
+let SETTINGS = { partner: 'experto', rivals: 'experto', hints: false, labels: false, socarrat: false, speed: 1, deck: 'clasica', lang: 'es', names: ['Toni','Maria','Vicent'], cotoBest: 5, unlocked: false, showAll: false, share: null, alias: '' };
 try { Object.assign(SETTINGS, JSON.parse(localStorage.getItem('cau.settings') || '{}')); } catch (e) {}
 applyLang(SETTINGS.lang, SETTINGS.names);
 const levelOf = p => p === 2 ? SETTINGS.partner : SETTINGS.rivals;
@@ -927,7 +946,7 @@ function botBet(S) {
 // Cartas: r = índice 0..9 → As, 2, 3, 4, 5, 6, 7, Sota, Caballo, Rey. s = palo 0..3 (oros, copas, espadas, bastos)
 const CSTR = [9, 0, 8, 1, 2, 3, 4, 6, 5, 7];        // fuerza: As > 3 > Rey > Sota > Caballo > 7 > 6 > 5 > 4 > 2
 const CPTS = [11, 0, 10, 0, 0, 0, 0, 3, 2, 4];      // puntos: As 11, 3 10, Rey 4, Sota 3, Caballo 2
-const C_SOTA = 7, C_REY = 9, C_SIETE = 6;
+const C_SOTA = 7, C_CABALLO = 8, C_REY = 9, C_SIETE = 6;
 const C_CAMBIABLE = [7, 8, 9, 2, 0];               // la pinta se puede cambiar por el 7 si es figura, 3 o As
 const coBeats = (a, b, tr) => a.s === b.s ? CSTR[a.r] > CSTR[b.r] : a.s === tr;
 const coSay = (G, txt, k) => { G.log.push({ txt, k: k || '' }); if (G.log.length > 500) G.log.splice(0, G.log.length - 500); G.feed.push({ txt, k: k || '' }); };
@@ -1008,7 +1027,7 @@ function coCantesFor(G, p) {
 }
 function coSing(G, p, s) {
   const t = team(p), v = s === G.trump ? 40 : 20;
-  G.sung.push(s); G.cantes[t] += v; G.score[t] += v;
+  G.sung.push(s); G.cantes[t] += v; G.score[t] += v; if (G.marked) G.marked[p] = false;
   if (G.rec) G.rec.ev.push(`  canta: ${SEATC[p]} ${v === 40 ? 'las 40' : '20 en ' + SUITN[s]} | marcador ${G.score[0]}-${G.score[1]}`);
   for (const id of [s * 10 + C_REY, s * 10 + C_SOTA]) if (!G.revealed[p].includes(id)) G.revealed[p].push(id);
   const who = p === 0 ? L('Cantas', 'Cantes') : `${NAMES[p]} canta`;
@@ -1048,6 +1067,7 @@ function coPlay(G, p, cid) {
   if (G.trick.length === 0) G.canSing = null;          // al salir a la baza siguiente se cierra el cante
   if (G.rec && G.trick.length === 0) G.rec.cur = `B${G.trickNo + 1} (${G.stock.length ? 'montón ' + G.stock.length : 'arrastre'}): `;
   if (G.rec) G.rec.cur += `${G.trick.length ? ', ' : ''}${SEATC[p]} ${cn(c)}`;
+  if (G.stock.length && G.trick.length && c.s !== G.trump && c.s !== G.trick[0].c.s && c.r === C_CABALLO && team(coTrickWinner(G, G.trick).p) !== team(p)) { if (!G.marked) G.marked = [false, false, false, false]; G.marked[p] = true; }   // marca: figura regalada a los rivales
   if (G.stock.length && G.trick.length && c.s !== G.trump && c.s !== G.trick[0].c.s) { if (!G.disc) G.disc = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]; G.disc[p][c.s]++; }   // descartes de cada uno
   G.trick.push({ p, c }); G.played.push(c.id);
   G.revealed[p] = G.revealed[p].filter(id => id !== c.id);
@@ -1203,6 +1223,16 @@ const coBotBest = (G, p) => coKeepTrumps(G, p, coHeur(G, p, CO_BEST), 10);
 // y juega el resto de la mano con la heurística buena para cada carta posible
 const coClone = G => { const { log, feed, rec, prevRec, ...r } = G; const c = JSON.parse(JSON.stringify(r)); c.log = []; c.feed = []; return c; };
 function coDeterminize(G, p) {
+  const q = (p + 2) % 4;
+  if (!CO_EXP.signals || !G.marked || !G.marked[q]) return coDeterminize0(G, p);
+  let d0 = null;
+  for (let i = 0; i < 25; i++) {
+    const d = coDeterminize0(G, p); if (!d) continue; if (!d0) d0 = d;
+    if ([0, 1, 2, 3].some(s => !d.sung.includes(s) && d.hands[q].some(c => c.s === s && c.r === C_REY) && d.hands[q].some(c => c.s === s && c.r === C_SOTA))) return d;
+  }
+  return d0;
+}
+function coDeterminize0(G, p) {
   const d = coClone(G), unseen = coUnseen(G, p);
   // cartas cuyo dueño se sabe: la pinta robada y los cantes enseñados
   const fixed = [[], [], [], []];
@@ -1233,7 +1263,7 @@ function coDeterminize(G, p) {
   return null;
 }
 function coRolloutValue(d, t) { return (d.pts[t] + d.cantes[t]) - (d.pts[1 - t] + d.cantes[1 - t]); }
-const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12, noLead: true, minTrumpPts: 10, solve: 6, protect: true, deepLast: 8, discW: 1, winW: 60, vueltasScale: 0.2 };
+const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12, noLead: true, minTrumpPts: 10, solve: 6, protect: true, deepLast: 8, discW: 1, signals: false, markW: 6, winW: 60, vueltasScale: 0.2 };
 // Muy difícil. El metajuego cambia según el momento:
 // · mano normal, con montón: se guardan los triunfos para el arrastre y nunca se sale de triunfo;
 // · arrastre: se puede salir de triunfo para quitar los de los rivales;
@@ -1407,7 +1437,14 @@ function coBotExpert(G, p, N = 40) {
     const w = coTrickWinner(G, G.trick); if (coBeats(c, w.c, G.trump) || c.s === G.trick[0].c.s) return 0;
     return G.disc[(p + 2) % 4][c.s] > 0 ? -CO_EXP.discW : G.disc[p][c.s] > 0 ? CO_EXP.discW / 2 : 0;
   };
-  let best = null, bv = -1e9; for (const c of legal) { const v = tot[c.id] / n - pen(c) + dsc(c) + Math.random() * 1e-3; if (v > bv) { bv = v; best = c.id; } }
+  // marcar: con rey y sota por cantar, regalar una figura de otro palo a los rivales avisa al compañero
+  const myPair = [0, 1, 2, 3].filter(s => !G.sung.includes(s) && G.hands[p].some(c => c.s === s && c.r === C_REY) && G.hands[p].some(c => c.s === s && c.r === C_SOTA));
+  const mk = c => {
+    if (!CO_EXP.signals || arr || lead || c.s === G.trump || c.s === G.trick[0].c.s || c.r !== C_CABALLO || team(coTrickWinner(G, G.trick).p) === t) return 0;
+    if (!myPair.length) return -CO_EXP.markW;   // sin cante no se marca: así la seña es de fiar
+    return (G.marked && G.marked[p]) || myPair.includes(c.s) ? 0 : CO_EXP.markW;
+  };
+  let best = null, bv = -1e9; for (const c of legal) { const v = tot[c.id] / n - pen(c) + dsc(c) + mk(c) + Math.random() * 1e-3; if (v > bv) { bv = v; best = c.id; } }
   return best;
 }
 // En la mano de vueltas: carta que gana la baza seguro y con la que se llega a 101
@@ -1481,7 +1518,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-01-2';
+const APP_VER = 'cau-2026-11-01-3';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
@@ -1515,7 +1552,7 @@ function showShareAsk() {
   <p>${L('Si quieres, la app envía cada mano que juegas (las cartas, las jugadas y el marcador) para estudiar cómo se juega y mejorar los bots. No se envía nada más: ni tu nombre ni tu correo, solo el alias que pongas aquí.', 'Si vols, l’app envia cada mà que jugues (les cartes, les jugades i el marcador) per a estudiar com es juga i millorar els bots. No s’envia res més: ni el teu nom ni el teu correu, només l’àlies que poses ací.')}</p>
   <div class="opt"><label>${L('Tu alias', 'El teu àlies')}</label><input id="alias" class="aliasin" type="text" maxlength="20" value="${esc(SETTINGS.alias || '')}" placeholder="${L('Por ejemplo, Pepe', 'Per exemple, Pepe')}"></div>
   <p class="desc">${L('Puedes cambiarlo cuando quieras en Ajustes.', 'Pots canviar-ho quan vulgues en Ajustos.')}</p>
-  <div class="acts"><button class="btn" type="button" data-act="share-no">${L('No compartir', 'No compartir')}</button><button class="btn primary" type="button" data-act="share-yes">${L('Compartir', 'Compartir')}</button></div>`);
+  <div class="acts"><button class="btn" type="button" data-act="share-no">${L('No compartir', 'No compartir')}</button><button class="btn primary" type="button" data-act="share-yes">${L('Compartir', 'Compartir')}</button></div>`); cover();
 }
 function saveSettings() { SETTINGS.speed = speedIx; try { localStorage.setItem('cau.settings', JSON.stringify(SETTINGS)); } catch (e) {} }
 const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1783,8 +1820,9 @@ async function loop() {
   } finally { if (gen === GEN) { busy = false; save(); render(); } }
 }
 
-function showPanel(html) { $('panel').classList.remove('menu'); $('panel').innerHTML = html; $('overlay').hidden = false; const f = $('panel').querySelector('button'); if (f) f.focus(); }
-function closePanel() { $('overlay').hidden = true; }
+function showPanel(html) { $('panel').classList.remove('menu'); $('overlay').classList.remove('cover'); $('panel').innerHTML = html; $('overlay').hidden = false; const f = $('panel').querySelector('button'); if (f) f.focus(); }
+function closePanel() { $('overlay').hidden = true; $('overlay').classList.remove('cover'); }
+const cover = () => $('overlay').classList.add('cover');
 
 const winTitle = () => S.winner === 0 ? L('¡Habéis ganado la partida!', 'Heu guanyat la partida!') : L('Han ganado la partida ellos', 'Han guanyat la partida ells');
 function scoreLine(i) { const [n, w] = scoreTxt(S.score[i]); return `${n} ${w}`; }
@@ -1812,14 +1850,14 @@ function rulesCoto() {
   return L(`<h2>Reglas del Coto</h2>
   <p>El guiñote de Alcoy: cuatro jugadores en dos parejas, baraja española de 40 cartas. Se juega hacia la derecha.</p>
   <h3>Cartas</h3><ul><li>Orden de fuerza: as, tres, rey, sota, caballo, 7, 6, 5, 4, 2.</li><li>Puntos: as 11, tres 10, rey 4, sota 3, caballo 2; el resto, 0. Con las 10 de últimas hay 130 puntos por mano.</li><li>Cualquier triunfo gana a cualquier carta de otro palo. Si no hay triunfo, gana la más alta del palo de salida.</li></ul>
-  <h3>Reparto</h3><ul><li>6 cartas a cada uno, de 3 en 3. La siguiente se deja boca arriba bajo el montón: es la pinta y marca el triunfo.</li><li>Reparte quien hizo las 10 de últimas en la mano anterior. Sale el de su derecha.</li></ul>
+  <h3>Reparto</h3><ul><li>6 cartas a cada uno, de una en una. La siguiente se deja boca arriba bajo el montón: es la pinta y marca el triunfo.</li><li>Reparte quien hizo las 10 de últimas en la mano anterior. Sale el de su derecha.</li></ul>
   <h3>Mientras queda montón</h3><ul><li>Tirada libre: no hay que asistir ni matar.</li><li>Después de cada baza roban todos, empezando por quien la ha ganado, que sale en la siguiente.</li><li><b>Cantes:</b> rey y sota del mismo palo. Las 40 si es de triunfo, las 20 si no. Se canta cuando tu pareja acaba de ganar una baza, antes de salir a la siguiente; se pueden cantar varios a la vez y también es opcional.</li><li><b>Cambiar el 7:</b> si la pinta es figura, tres o as, quien tenga el 7 de triunfo la puede cambiar mientras quede montón, si su pareja ya ha ganado alguna baza.</li></ul>
   <h3>Arrastre (sin montón)</h3><ul><li>Siempre hay que seguir el palo.</li><li>Si va ganando un rival: hay que superarle si se puede. Sin el palo, hay que fallar con triunfo, y si ya hay un triunfo, echar uno más alto si se tiene.</li><li>Si va ganando tu compañero: cualquier carta del palo; sin el palo, carta libre.</li></ul>
   <h3>Partida y coto</h3><ul><li>Se gana con 101 puntos: las 50 primeras son malas y a partir de ahí, buenas (51 buenas).</li><li>Si al acabar la mano las dos parejas pasan de 50 buenas, gana la que hizo las 10 de últimas.</li><li>Si nadie llega, se juega otra mano de vueltas sumando, y la partida acaba en el momento en que una pareja llega a 101 (con bazas o cantes): «se sale».</li><li>El coto se juega al mejor de 5 partidas (o de 3, en Ajustes).</li></ul>`,
   `<h2>Regles del Coto</h2>
   <p>El guinyot d'Alcoi: quatre jugadors en dues parelles, baralla espanyola de 40 cartes. Es juga cap a la dreta.</p>
   <h3>Cartes</h3><ul><li>Ordre de força: as, tres, rei, sota, cavall, 7, 6, 5, 4, 2.</li><li>Punts: as 11, tres 10, rei 4, sota 3, cavall 2; la resta, 0. Amb les 10 d'últimes hi ha 130 punts per mà.</li><li>Qualsevol triomf guanya a qualsevol carta d'un altre pal. Si no hi ha triomf, guanya la més alta del pal d'eixida.</li></ul>
-  <h3>Repartiment</h3><ul><li>6 cartes a cadascú, de 3 en 3. La següent es deixa cap per amunt davall del munt: és la pinta i marca el triomf.</li><li>Reparteix qui va fer les 10 d'últimes en la mà anterior. Ix el de la seua dreta.</li></ul>
+  <h3>Repartiment</h3><ul><li>6 cartes a cadascú, d'una en una. La següent es deixa cap per amunt davall del munt: és la pinta i marca el triomf.</li><li>Reparteix qui va fer les 10 d'últimes en la mà anterior. Ix el de la seua dreta.</li></ul>
   <h3>Mentre queda munt</h3><ul><li>Tirada lliure: no cal assistir ni matar.</li><li>Després de cada basa roben tots, començant per qui l'ha guanyada, que ix en la següent.</li><li><b>Cants:</b> rei i sota del mateix pal. Les 40 si és de triomf, les 20 si no. Es canta quan la teua parella acaba de guanyar una basa, abans d'eixir a la següent; se'n poden cantar diversos alhora i també és opcional.</li><li><b>Canviar el 7:</b> si la pinta és figura, tres o as, qui tinga el 7 de triomf la pot canviar mentre quede munt, si la seua parella ja ha guanyat alguna basa.</li></ul>
   <h3>Arrossegament (sense munt)</h3><ul><li>Sempre cal seguir el pal.</li><li>Si guanya un rival: cal superar-lo si es pot. Sense el pal, cal fallar amb triomf, i si ja hi ha un triomf, tirar-ne un de més alt si se'n té.</li><li>Si guanya el teu company: qualsevol carta del pal; sense el pal, carta lliure.</li></ul>
   <h3>Partida i coto</h3><ul><li>Es guanya amb 101 punts: els 50 primers són males i a partir d'ací, bones (51 bones).</li><li>Si en acabar la mà les dues parelles passen de 50 bones, guanya la que va fer les 10 d'últimes.</li><li>Si ningú no hi arriba, es juga una altra mà de voltes sumant, i la partida acaba en el moment en què una parella arriba a 101 (amb bases o cants): «s'ix».</li><li>El coto es juga al millor de 5 partides (o de 3, en Ajustos).</li></ul>`);
@@ -1916,9 +1954,73 @@ function showMenu() {
   panelBack = null;
   if (SETTINGS.share == null) return showShareAsk();
   const cont = hasSaved && savedActive() ? `<button class="btn primary" type="button" data-act="continue">${L('Continuar', 'Continuar')}<small class="contlbl">${esc(continueLabel())}</small></button>` : '';
-  showPanel(`<div class="menu" style="display:flex;flex-direction:column;gap:14px"><div class="logo">CotoCau</div><p class="tag">Els jocs de cartes de les filaes d'Alcoi</p><p class="desc" style="text-align:center;opacity:.6;margin:0">v. ${APP_VER.replace('cau-', '')}</p><div class="stack">${cont}<button class="btn ${cont ? '' : 'primary'}" type="button" data-act="play">${L('Jugar', 'Jugar')}</button><button class="btn" type="button" data-act="settings">${L('Ajustes', 'Ajustos')}</button><button class="btn" type="button" data-act="rules">${L('Reglas', 'Regles')}</button></div></div>`);
-  $('panel').classList.add('menu');
+  const fan = [[0, -24], [10, -8], [20, 8], [30, 24]].map(([id, a]) => `<div class="fc" style="transform:translateX(-50%) rotate(${a}deg)">${cardHTML(coCard(id))}</div>`).join('');
+  showPanel(`<div class="menu" style="display:flex;flex-direction:column;gap:14px"><div class="fan" aria-hidden="true">${fan}</div><div class="logo">CotoCau</div><p class="tag">Els jocs de cartes de les filaes d'Alcoi</p><p class="desc" style="text-align:center;opacity:.6;margin:0">v. ${APP_VER.replace('cau-', '')}</p><div class="stack">${cont}<button class="btn ${cont ? '' : 'primary'}" type="button" data-act="play">${L('Jugar', 'Jugar')}</button><button class="btn" type="button" data-act="tutorial">${L('Aprender a jugar', 'Aprendre a jugar')}</button><button class="btn" type="button" data-act="settings">${L('Ajustes', 'Ajustos')}</button><button class="btn" type="button" data-act="rules">${L('Reglas', 'Regles')}</button></div></div>`);
+  $('panel').classList.add('menu'); cover();
 }
+
+/* ---------------- Tutorial ---------------- */
+// cartas: id = palo*10 + índice (0 as, 1 dos, 2 tres, 3 cuatro, 4 cinco, 5 seis, 6 siete, 7 sota, 8 caballo, 9 rey); palos 0 oros, 1 copas, 2 espadas, 3 bastos
+const TUT = {
+  coto: [
+    { t: ['El Coto', 'El Coto'], cards: [[0], [10], [20], [30]],
+      h: ['Es el guiñote de Alcoy. Juegan cuatro, en dos parejas: tu compañera se sienta enfrente y los rivales a los lados. Se juega con la baraja española de 40 cartas y hacia la derecha.<br><br>El objetivo es que tu pareja llegue a <b>101 puntos</b> sumando las cartas que gana en las bazas y los cantes.',
+          'És el guinyot d\'Alcoi. Juguen quatre, en dues parelles: la teua companya s\'asseu davant i els rivals als costats. Es juga amb la baralla espanyola de 40 cartes i cap a la dreta.<br><br>L\'objectiu és que la teua parella arribe a <b>101 punts</b> sumant les cartes que guanya en les bases i els cants.'] },
+    { t: ['Cuánto vale cada carta', 'Quant val cada carta'], cards: [[0, '11'], [2, '10'], [9, '4'], [7, '3'], [8, '2'], [6, '0']],
+      h: ['De más fuerte a más floja: <b>as, tres, rey, sota, caballo</b> y luego 7, 6, 5, 4 y 2.<br><br>Puntos: as 11, tres 10, rey 4, sota 3 y caballo 2. Las demás no valen nada. Al as y al tres se les llama <b>guiñotes</b>.',
+          'De més forta a més fluixa: <b>as, tres, rei, sota, cavall</b> i després 7, 6, 5, 4 i 2.<br><br>Punts: as 11, tres 10, rei 4, sota 3 i cavall 2. Les altres no valen res. A l\'as i al tres se\'ls diu <b>guinyots</b>.'] },
+    { t: ['El triunfo', 'El triomf'], cards: [[21, L('pinta', 'pinta')], [24, L('triunfo', 'triomf')], [0, L('pierde', 'perd')]],
+      h: ['Se reparten 6 cartas a cada uno y la siguiente se deja boca arriba bajo el montón: es la <b>pinta</b>, y su palo es el <b>triunfo</b>.<br><br>Cualquier triunfo gana a cualquier carta de otro palo: aquí, si pintan espadas, el 5 de espadas gana al as de oros.',
+          'Es reparteixen 6 cartes a cadascú i la següent es deixa cap per amunt davall del munt: és la <b>pinta</b>, i el seu pal és el <b>triomf</b>.<br><br>Qualsevol triomf guanya a qualsevol carta d\'un altre pal: ací, si pinten espases, el 5 d\'espases guanya a l\'as d\'oros.'] },
+    { t: ['La baza', 'La basa'], cards: [[14, L('sale', 'ix')], [19, L('gana', 'guanya')], [33], [3]],
+      h: ['Sale el de la derecha de quien reparte y cada uno echa una carta. Gana la más alta del palo que ha salido, salvo que alguien eche triunfo. Quien gana se lleva las cuatro cartas y sale en la siguiente.<br><br>Mientras queda montón puedes echar <b>lo que quieras</b>, y al acabar cada baza todos roban una carta, empezando por el que la ha ganado.',
+          'Ix el de la dreta del que reparteix i cadascú tira una carta. Guanya la més alta del pal que ha eixit, llevat que algú tire triomf. Qui guanya s\'endú les quatre cartes i ix en la següent.<br><br>Mentre queda munt pots tirar <b>el que vulgues</b>, i en acabar cada basa tots roben una carta, començant pel que l\'ha guanyada.'] },
+    { t: ['Cantes y el 7', 'Cants i el 7'], cards: [[19], [17], [26, L('cambia', 'canvia')]],
+      h: ['Si tienes <b>rey y sota del mismo palo</b>, cantas: 20 puntos, o <b>las 40</b> si son de triunfo. Solo se canta justo después de que tu pareja gane una baza; te saldrá un botón para hacerlo.<br><br>Si la pinta es buena (figura, tres o as) y tienes el <b>7 de triunfo</b>, lo puedes cambiar por ella. En la última baza con montón se cambia solo si la gana tu pareja.',
+          'Si tens <b>rei i sota del mateix pal</b>, cantes: 20 punts, o <b>les 40</b> si són de triomf. Només es canta just després que la teua parella guanye una basa; t\'eixirà un botó per a fer-ho.<br><br>Si la pinta és bona (figura, tres o as) i tens el <b>7 de triomf</b>, la pots canviar. En l\'última basa amb munt es canvia sola si la guanya la teua parella.'] },
+    { t: ['El arrastre', 'L\'arrossegament'], cards: [[3], [5, L('obligado', 'obligat')], [22]],
+      h: ['Cuando se acaba el montón empieza el <b>arrastre</b> y cambian las normas:<br>• Hay que <b>seguir el palo</b> siempre.<br>• Si gana un rival, hay que <b>superarle</b> si se puede; si no tienes del palo, hay que <b>fallar</b> con triunfo.<br>• Si gana tu compañera, basta con echar del palo.<br><br>Las cartas que no puedes jugar salen apagadas.',
+          'Quan s\'acaba el munt comença l\'<b>arrossegament</b> i canvien les normes:<br>• Cal <b>seguir el pal</b> sempre.<br>• Si guanya un rival, cal <b>superar-lo</b> si es pot; si no tens del pal, cal <b>fallar</b> amb triomf.<br>• Si guanya la teua companya, n\'hi ha prou amb tirar del pal.<br><br>Les cartes que no pots jugar ixen apagades.'] },
+    { t: ['Puntos, vueltas y coto', 'Punts, voltes i coto'], cards: [],
+      h: ['La última baza vale <b>10 puntos más</b> («las 10 de últimas»). En total hay 130 por mano.<br><br>Si nadie llega a 101, se juega otra mano <b>de vueltas</b> sumando, y gana quien llega antes a 101, en el momento en que llega. Las primeras 50 son «malas» y las siguientes, «buenas».<br><br>Un <b>coto</b> se gana al mejor de 5 partidas.',
+          'L\'última basa val <b>10 punts més</b> («les 10 d\'últimes»). En total n\'hi ha 130 per mà.<br><br>Si ningú no arriba a 101, es juga una altra mà <b>de voltes</b> sumant, i guanya qui arriba abans a 101, en el moment en què hi arriba. Els primers 50 són «males» i els següents, «bones».<br><br>Un <b>coto</b> es guanya al millor de 5 partides.'] },
+    { t: ['Tres consejos', 'Tres consells'], cards: [],
+      h: ['• Si la baza ya es de tu compañera, <b>cárgale puntos</b> (un tres, un rey…).<br>• No gastes triunfos para ganar bazas que no valen nada: te harán falta en el arrastre.<br>• <b>Cuenta</b> los triunfos y los guiñotes que van saliendo.<br><br>Puedes repasar todo en Reglas cuando quieras.',
+          '• Si la basa ja és de la teua companya, <b>carrega-li punts</b> (un tres, un rei…).<br>• No gastes triomfs per a guanyar bases que no valen res: et faran falta en l\'arrossegament.<br>• <b>Compta</b> els triomfs i els guinyots que van eixint.<br><br>Pots repassar-ho tot en Regles quan vulgues.'] }
+  ],
+  cau: [
+    { t: ['El Cau', 'El Cau'], cards: [[4], [14], [24], [34]],
+      h: ['Juegan cuatro en dos parejas, con la baraja española y hacia la derecha. En el Cau <b>solo cuenta el número</b>, nunca el palo: un 5 de oros y un 5 de bastos son lo mismo.<br><br>Gana la pareja que llega antes a <b>40 puntos</b>.',
+          'Juguen quatre en dues parelles, amb la baralla espanyola i cap a la dreta. En el Cau <b>només compta el número</b>, mai el pal: un 5 d\'oros i un 5 de bastos són el mateix.<br><br>Guanya la parella que arriba abans a <b>40 punts</b>.'] },
+    { t: ['El reparto', 'El repartiment'], cards: [],
+      h: ['Se ponen <b>4 cartas boca arriba en la mesa</b> y se dan <b>3 a cada jugador</b>. Cuando nadie tiene cartas se reparten otras 3, y así hasta 3 repartos por mano.<br><br>Si al repartir se repite un número en la mesa, «s\'ha pixat»: la repetida se aparta y sale otra.',
+          'Es posen <b>4 cartes cap per amunt al tapet</b> i se\'n donen <b>3 a cada jugador</b>. Quan ningú no té cartes se\'n reparteixen 3 més, i així fins a 3 repartiments per mà.<br><br>Si en repartir es repeteix un número al tapet, «s\'ha pixat»: la repetida s\'aparta i n\'ix una altra.'] },
+    { t: ['Capturar y escalas', 'Arreplegar i escales'], cards: [[34, L('tú', 'tu')], [4, L('mesa', 'tapet')], [15, L('mesa', 'tapet')], [26, L('mesa', 'tapet')], [11, L('se queda', 'es queda'), 1]],
+      h: ['Si tu carta tiene el <b>mismo número</b> que una de la mesa, te la llevas. Y te llevas también las <b>siguientes en escala</b> que haya: con un 5, si en la mesa hay 5, 6 y 7, te llevas las tres.<br><br>Si no capturas nada, tu carta se queda en la mesa.',
+          'Si la teua carta té el <b>mateix número</b> que una del tapet, te l\'endús. I t\'endús també les <b>següents en escala</b> que hi haja: amb un 5, si al tapet hi ha 5, 6 i 7, t\'endús les tres.<br><br>Si no arreplegues res, la teua carta es queda al tapet.'] },
+    { t: ['Bac, rebac y Sant Vicent', 'Bac, rebac i Sant Vicent'], cards: [[7, 'bac'], [17, 'rebac'], [27, 'Sant Vicent']],
+      h: ['Los puntos de verdad están aquí:<br>• <b>Bac (2):</b> matas la carta que acaba de echar el anterior.<br>• <b>Rebac (3):</b> el siguiente mata el bac, y el bac pierde sus 2.<br>• <b>Sant Vicent (5):</b> la cuarta carta mata el rebac, que pierde sus 3.<br>• <b>Limpia (1):</b> dejas la mesa vacía.',
+          'Els punts de veritat són ací:<br>• <b>Bac (2):</b> mates la carta que acaba de tirar l\'anterior.<br>• <b>Rebac (3):</b> el següent mata el bac, i el bac perd els seus 2.<br>• <b>Sant Vicent (5):</b> la quarta carta mata el rebac, que perd els seus 3.<br>• <b>Limpia (1):</b> deixes el tapet buit.'] },
+    { t: ['De nit', 'De nit'], cards: [[8], [38]],
+      h: ['Si tienes <b>pareja</b> (dos cartas del mismo número) cantas «de nit» en tu turno, antes de jugar, con el botón que aparece. Si solo canta tu pareja, sumáis un punto por canto.<br><br>Si cantan las dos parejas, se apuesta: <b>xic</b> (1), <b>xac</b> (aceptar), <b>envide</b> (2), <b>torne</b> (2 más) o <b>la partida</b>. Gana la jugada más alta, y se sabe al acabar el reparto.',
+          'Si tens <b>parella</b> (dues cartes del mateix número) cantes «de nit» en el teu torn, abans de jugar, amb el botó que apareix. Si només canta la teua parella, sumeu un punt per cant.<br><br>Si canten les dues parelles, s\'aposta: <b>xic</b> (1), <b>xac</b> (acceptar), <b>envide</b> (2), <b>torne</b> (2 més) o <b>la partida</b>. Guanya la jugada més alta, i se sap en acabar el repartiment.'] },
+    { t: ['Puntos y un consejo', 'Punts i un consell'], cards: [],
+      h: ['Al acabar la mano, cada pareja suma un punto por cada carta que tenga por encima de 20. Se juega a 40: las primeras 20 son «malas» y las siguientes, «buenas».<br><br><b>Consejo:</b> fíjate en qué carta deja el rival de tu izquierda; si tienes una igual, ¡bac! Y en Ajustes puedes poner las <b>ayudas</b>, que te dicen qué pasa si juegas cada carta.',
+          'En acabar la mà, cada parella suma un punt per cada carta que tinga per damunt de 20. Es juga a 40: els primers 20 són «males» i els següents, «bones».<br><br><b>Consell:</b> fixa\'t en quina carta deixa el rival de la teua esquerra; si en tens una d\'igual, bac! I en Ajustos pots posar les <b>ajudes</b>, que et diuen què passa si jugues cada carta.'] }
+  ]
+};
+function showTutorial(g, i) {
+  const steps = TUT[g], st = steps[i], last = i === steps.length - 1;
+  const tabs = `<div class="tabs" role="group" style="grid-template-columns:repeat(2,1fr)">${[['coto', 'Coto'], ['cau', 'Cau']].map(([k, l]) => `<button type="button" data-act="tut" data-g="${k}" data-i="0" aria-pressed="${k === g}">${l}</button>`).join('')}</div>`;
+  const cards = st.cards.length ? `<div class="tcards">${st.cards.map(([id, cap, dim]) => `<div class="tc ${dim ? 'dim' : ''}">${cardHTML(coCard(id))}${cap ? `<small>${cap}</small>` : ''}</div>`).join('')}</div>` : '';
+  const dots = `<div class="dots">${steps.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</div>`;
+  const prev = i > 0 ? `<button class="btn" type="button" data-act="tut" data-g="${g}" data-i="${i - 1}">${L('Anterior', 'Anterior')}</button>` : `<button class="btn" type="button" data-act="back">${L('Menú', 'Menú')}</button>`;
+  const next = last ? `<button class="btn primary" type="button" data-act="tut-play" data-g="${g}">${L(`Jugar al ${g === 'coto' ? 'Coto' : 'Cau'}`, `Jugar al ${g === 'coto' ? 'Coto' : 'Cau'}`)}</button>`
+    : `<button class="btn primary" type="button" data-act="tut" data-g="${g}" data-i="${i + 1}">${L('Siguiente', 'Següent')}</button>`;
+  showPanel(`<div class="tut" data-tut="1">${tabs}<h2>${L(st.t[0], st.t[1])}</h2>${cards}<p>${L(st.h[0], st.h[1])}</p>${dots}<div class="acts">${prev}${next}</div></div>`);
+  panelBack = 'menu'; cover();
+}
+let devOpen = false, devBad = false;
 function showSettings() {
   panelBack = 'menu';
   const off = [[false, L('Quitadas', 'Llevades')], [true, L('Puestas', 'Posades')]];
@@ -1937,9 +2039,10 @@ function showSettings() {
   <div class="opt"><label>${L('Baraja', 'Baralla')}</label>${seg('deck', [['moderna','Moderna'],['clasica', L('Clásica', 'Clàssica')]], SETTINGS.deck, true)}<span class="desc">${L('La clásica es la baraja libre «Naipes Libres».', 'La clàssica és la baralla lliure «Naipes Libres».')}</span></div>
   <div class="opt"><label>${L('Compartir mis partidas', 'Compartir les meues partides')}</label>${seg('share', off.map(([v]) => [v, v ? L('Sí', 'Sí') : 'No']), !!SETTINGS.share, true)}<span class="desc">${L('Envía tus manos (cartas, jugadas y marcador, sin datos personales) para mejorar los bots.', 'Envia les teues mans (cartes, jugades i marcador, sense dades personals) per a millorar els bots.')}</span>
     <span class="names"><span><small>${L('Alias', 'Àlies')}</small><input id="aliasset" type="text" maxlength="20" value="${esc(SETTINGS.alias || '')}"></span></span></div>
-  <div class="opt"><label>${L('Ver todas las cartas (pruebas)', 'Vore totes les cartes (proves)')}</label>${seg('showAll', off, !!SETTINGS.showAll, true)}<span class="desc">${L('Para estudiar a los bots: enseña las cartas de tu compañera y de los rivales.', 'Per a estudiar els bots: mostra les cartes de la teua companya i dels rivals.')}</span></div>
+  ${devOpen ? `<div class="opt"><label>🔓 ${L('Ver todas las cartas (pruebas)', 'Vore totes les cartes (proves)')}</label>${seg('showAll', off, !!SETTINGS.showAll, true)}<span class="desc">${L('Para estudiar a los bots: enseña las cartas de tu compañera y de los rivales.', 'Per a estudiar els bots: mostra les cartes de la teua companya i dels rivals.')}</span></div>`
+    : `<div class="opt"><label>🔒 ${L('Opciones de desarrollo', 'Opcions de desenvolupament')}</label><div class="devlock"><input id="devpw" type="password" autocomplete="off" placeholder="${L('Contraseña', 'Contrasenya')}"><button class="btn" type="button" data-act="devpw">${L('Abrir', 'Obrir')}</button></div>${devBad ? `<span class="desc pwerr">${L('Contraseña incorrecta.', 'Contrasenya incorrecta.')}</span>` : ''}</div>`}
   <div class="opt"><label>${L('Ritmo', 'Ritme')}</label>${seg('speed', [[0, L('Lento', 'Lent')], [1, 'Normal'], [2, L('Rápido', 'Ràpid')]], speedIx)}</div>
-  <div class="acts"><button class="btn primary" type="button" data-act="back">${L('Volver', 'Tornar')}</button></div>`);
+  <div class="acts"><button class="btn primary" type="button" data-act="back">${L('Volver', 'Tornar')}</button></div>`); cover(); devBad = false;
 }
 const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
 function startNewGame() { S = newGame(); S.feed = []; narr = L(`Mano 1. Reparte ${NAMES[S.dealer]}.`, `Mà 1. Reparteix ${NAMES[S.dealer]}.`); hasSaved = true; closePanel(); beginHand(); }
@@ -2018,9 +2121,13 @@ $('panel').addEventListener('click', e => {
   if (a === 'match-go') matchGo();
   if (a === 'match-tb') matchTiebreak();
   if (a === 'menu') showMenu();
-  if (a === 'rules-cau' || a === 'rules-coto' || a === 'rules-cotocau') { const back = panelBack; showRules(a.slice(6)); panelBack = back; }
+  if (a === 'rules-cau' || a === 'rules-coto' || a === 'rules-cotocau') { const back = panelBack; showRules(a.slice(6)); panelBack = back; if (back === 'menu') cover(); }
   if (a === 'settings') showSettings();
-  if (a === 'rules') { showRules(); panelBack = 'menu'; }
+  if (a === 'rules') { showRules(); panelBack = 'menu'; cover(); }
+  if (a === 'tutorial') showTutorial('coto', 0);
+  if (a === 'tut') showTutorial(b.dataset.g, +b.dataset.i);
+  if (a === 'tut-play') startGame(b.dataset.g);
+  if (a === 'devpw') { const v = ($('devpw') || {}).value || ''; if (v.trim().toLowerCase() === 'alcoi') devOpen = true; else devBad = true; showSettings(); }
   if (a === 'back') showMenu();
   if (a === 'nexthand') { S.dealer = (S.dealer + 1) % 4; newHand(S); S.feed = []; narr = L(`Mano ${S.handNo}. Reparte ${NAMES[S.dealer]}.`, `Mà ${S.handNo}. Reparteix ${NAMES[S.dealer]}.`); closePanel(); beginHand(); }
 });
@@ -2348,7 +2455,7 @@ function showPlay() {
     <button class="btn playopt" type="button" data-act="play-coto"><b>${lock}Coto</b>${dev}<small>${L(`Al mejor de ${SETTINGS.cotoBest || 5} partidas`, `Al millor de ${SETTINGS.cotoBest || 5} partides`)}</small></button>
     <button class="btn playopt" type="button" data-act="play-cau"><b>Cau</b><small>${L('Partida a 40', 'Partida a 40')}</small></button>
   </div><div class="acts"><button class="btn" type="button" data-act="back">${L('Volver', 'Tornar')}</button></div></div>`);
-  $('panel').classList.add('menu');
+  $('panel').classList.add('menu'); cover();
 }
 function showPassword(target, wrong) {
   panelBack = 'menu';
