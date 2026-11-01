@@ -1421,8 +1421,8 @@ function coBotExpert(G, p, N = CO_EXP.N || 40) {
   }
   // al final del arrastre se calcula exacto (doble mudo) sobre cada reparto posible de las cartas ocultas
   if (arr && CO_EXP.solve && (G.hands[p].length < CO_EXP.solve || (G.hands[p].length === CO_EXP.solve && G.trick.length))) {
-    const M = [0, 30, 30, 30, 30, 12, 8][G.hands[p].length], sum = {}; legal.forEach(c => sum[c.id] = 0); let m = 0;
-    for (let k = 0; k < M; k++) { const d = coDeterminize(G, p); if (!d) continue; m++; for (const c of legal) sum[c.id] += coSolveOption(d, p, c); }
+    const M = [0, 100, 100, 100, 80, 30, 12][G.hands[p].length], sum = {}; legal.forEach(c => sum[c.id] = 0); let m = 0; const ts = Date.now();
+    for (let k = 0; k < M && (k < 12 || Date.now() - ts < 500); k++) { const d = coDeterminize(G, p); if (!d) continue; m++; for (const c of legal) sum[c.id] += coSolveOption(d, p, c); }
     if (m) { let best = null, bv = -1e9; for (const c of legal) { const v = sum[c.id] / m - 0.01 * (CSTR[c.r] + (c.s === G.trump ? 10 : 0)) + Math.random() * 1e-4; if (v > bv) { bv = v; best = c.id; } } return best; }   // a igualdad, se guarda la carta fuerte
   }
   // mano de vueltas, con montón: si gana mi compañero y aún juega un rival detrás, protejo la baza con el triunfo más bajo
@@ -1559,7 +1559,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-01-10';
+const APP_VER = 'cau-2026-11-01-11';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
