@@ -1276,7 +1276,7 @@ function coDeterminize0(G, p) {
   return null;
 }
 function coRolloutValue(d, t) { return (d.pts[t] + d.cantes[t]) - (d.pts[1 - t] + d.cantes[1 - t]); }
-const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12, noLead: true, minTrumpPts: 10, solve: 6, protect: true, deepLast: 8, discW: 1, signals: false, markW: 6, noGift: true, N: 80, winW: 60, vueltasScale: 0.2 };
+const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12, noLead: true, minTrumpPts: 10, solve: 6, protect: true, deepLast: 8, discW: 1, signals: false, markW: 6, noGift: true, N: 80, refine: 12, refineN: 400, refineMs: 250, winW: 60, vueltasScale: 0.2 };
 // Muy difícil. El metajuego cambia según el momento:
 // · mano normal, con montón: se guardan los triunfos para el arrastre y nunca se sale de triunfo;
 // · arrastre: se puede salir de triunfo para quitar los de los rivales;
@@ -1433,24 +1433,36 @@ function coBotExpert(G, p, N = CO_EXP.N || 40) {
       if (low.length) return low[0].id;
     }
   }
+  const roll = (det, c) => {
+    const sim = coClone(det); const v0 = coRolloutValue(sim, t);
+    coPlay(sim, p, c.id);
+    for (let g = 0; g < 60 && sim.phase === 'play' && sim.hands.some(h => h.length); g++) {
+      const q = sim.turn;
+      for (let i = 0; i < 4; i++) { const qq = (q + i) % 4; for (const s of coCantesFor(sim, qq)) coSing(sim, qq, s); }
+      if (sim.phase !== 'play') break;
+      coPlay(sim, q, coBotBest(sim, q));
+    }
+    let v = coRolloutValue(sim, t) - v0;
+    if (CO_EXP.winW && sim.partidaWinner != null) v += sim.partidaWinner === t ? CO_EXP.winW : -CO_EXP.winW;
+    return v;
+  };
   const tot = {}; legal.forEach(c => tot[c.id] = 0); let n = 0;
   for (let k = 0; k < N; k++) {
     const det = coDeterminize(G, p); if (!det) continue; n++;
-    for (const c of legal) {
-      const sim = coClone(det); const v0 = coRolloutValue(sim, t);
-      coPlay(sim, p, c.id);
-      for (let g = 0; g < 60 && sim.phase === 'play' && sim.hands.some(h => h.length); g++) {
-        const q = sim.turn;
-        for (let i = 0; i < 4; i++) { const qq = (q + i) % 4; for (const s of coCantesFor(sim, qq)) coSing(sim, qq, s); }
-        if (sim.phase !== 'play') break;
-        coPlay(sim, q, coBotBest(sim, q));
-      }
-      let v = coRolloutValue(sim, t) - v0;
-      if (CO_EXP.winW && sim.partidaWinner != null) v += sim.partidaWinner === t ? CO_EXP.winW : -CO_EXP.winW;
-      tot[c.id] += v;
-    }
+    for (const c of legal) tot[c.id] += roll(det, c);
   }
   if (!n) return coBotBest(G, p);
+  // si las mejores opciones quedan muy juntas, se afinan con más repartos solo entre ellas
+  if (CO_EXP.refine && legal.length > 1) {
+    const srt = legal.slice().sort((a, b) => tot[b.id] - tot[a.id]);
+    const top = srt.filter(c => (tot[srt[0].id] - tot[c.id]) / n < CO_EXP.refine).slice(0, 3);
+    if (top.length > 1) {
+      const t2 = {}; top.forEach(c => t2[c.id] = 0); let m = 0;
+      const t1 = Date.now();
+      for (let k = 0; k < CO_EXP.refineN && (k < 20 || Date.now() - t1 < CO_EXP.refineMs); k++) { const det = coDeterminize(G, p); if (!det) continue; m++; for (const c of top) t2[c.id] += roll(det, c); }
+      if (m) for (const c of top) tot[c.id] = (tot[c.id] + t2[c.id]) / (n + m) * n;
+    }
+  }
   // guardar triunfos: cuesta tirarlos antes del arrastre (menos en la mano de vueltas, donde pocas veces se llega)
   const k = G.vueltas ? CO_EXP.vueltasScale : 1;
   const pen = c => arr || c.s !== G.trump ? 0 : k * (CO_EXP.trumpPen + CSTR[c.r] * CO_EXP.trumpPen / 10 + (lead ? CO_EXP.leadPen + (CSTR[c.r] >= 8 ? CO_EXP.leadPen : 0) : 0));
@@ -1547,7 +1559,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-01-9';
+const APP_VER = 'cau-2026-11-01-10';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
