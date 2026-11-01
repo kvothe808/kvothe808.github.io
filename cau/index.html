@@ -960,7 +960,7 @@ function cotoNewHand(G) {
   G.leader = (G.dealer + 1) % 4; G.turn = G.leader;
   G.trick = []; G.lastTrick = null; G.won = [0, 0]; G.pts = [0, 0]; G.cantes = [0, 0]; G.ultimas = [0, 0];
   G.sung = []; G.canSing = null; G.lastWinner = null; G.trickNo = 0;
-  G.played = []; G.voids = [[], [], [], []]; G.noTrumpOver = [[], [], [], []];
+  G.played = []; G.disc = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]; G.voids = [[], [], [], []]; G.noTrumpOver = [[], [], [], []];
   G.revealed = [[], [], [], []]; G.pintaHolder = null; G.swapped = false;
   G.phase = 'play'; G.handSummary = null;
   G.prevRec = G.rec || null;
@@ -1048,6 +1048,7 @@ function coPlay(G, p, cid) {
   if (G.trick.length === 0) G.canSing = null;          // al salir a la baza siguiente se cierra el cante
   if (G.rec && G.trick.length === 0) G.rec.cur = `B${G.trickNo + 1} (${G.stock.length ? 'montón ' + G.stock.length : 'arrastre'}): `;
   if (G.rec) G.rec.cur += `${G.trick.length ? ', ' : ''}${SEATC[p]} ${cn(c)}`;
+  if (G.stock.length && G.trick.length && c.s !== G.trump && c.s !== G.trick[0].c.s) { if (!G.disc) G.disc = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]; G.disc[p][c.s]++; }   // descartes de cada uno
   G.trick.push({ p, c }); G.played.push(c.id);
   G.revealed[p] = G.revealed[p].filter(id => id !== c.id);
   if (c.id === (G.pintaHolderCard ?? -1)) G.pintaHolder = null;
@@ -1232,7 +1233,7 @@ function coDeterminize(G, p) {
   return null;
 }
 function coRolloutValue(d, t) { return (d.pts[t] + d.cantes[t]) - (d.pts[1 - t] + d.cantes[1 - t]); }
-const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12, noLead: true, minTrumpPts: 10, solve: 6, protect: true, winW: 60, vueltasScale: 0.2 };
+const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12, noLead: true, minTrumpPts: 10, solve: 6, protect: true, deepLast: 8, discW: 1, winW: 60, vueltasScale: 0.2 };
 // Muy difícil. El metajuego cambia según el momento:
 // · mano normal, con montón: se guardan los triunfos para el arrastre y nunca se sale de triunfo;
 // · arrastre: se puede salir de triunfo para quitar los de los rivales;
@@ -1315,12 +1316,40 @@ function coSolveOption(d, p, c) {
   return team(p) === 0 ? v : -v;
 }
 
+// Valoración a fondo: se juega con coBotBest hasta que se acaba el montón y el arrastre se calcula exacto
+function coDeepVals(G, p, ids, N) {
+  const t = team(p), o = {}; ids.forEach(id => o[id] = 0); let n = 0; const t0 = Date.now();
+  for (let k = 0; k < N; k++) {
+    if (n >= 3 && Date.now() - t0 > (CO_EXP.deepMs || 700)) break;   // tope de tiempo para no dejar esperando
+    const det = coDeterminize(G, p); if (!det) continue; n++;
+    for (const id of ids) {
+      const sim = coClone(det), base = sim.score[t] - sim.score[1 - t]; coPlay(sim, p, id); let g = 0;
+      while (sim.phase === 'play' && sim.stock.length && g++ < 60) { const q = sim.turn; for (let i = 0; i < 4; i++) { const qq = (q + i) % 4; for (const s of coCantesFor(sim, qq)) coSing(sim, qq, s); } if (sim.phase !== 'play') break; coPlay(sim, q, coBotBest(sim, q)); }
+      let v;
+      if (sim.phase === 'play' && sim.hands[sim.turn].length) {
+        for (let i = 0; i < 4; i++) for (const s of coCantesFor(sim, i)) coSing(sim, i, s);
+        const r = coSolveArr(sim.hands, sim.trick, sim.turn, sim.trump, { sung: sim.sung, vueltas: sim.vueltas, score: sim.score, won: sim.won });
+        v = (sim.score[t] - sim.score[1 - t]) - base + (t === 0 ? r : -r);
+      } else { v = (sim.score[t] - sim.score[1 - t]) - base; if (sim.partidaWinner != null) v += sim.partidaWinner === t ? 1000 : -1000; }
+      o[id] += v;
+    }
+  }
+  if (n) ids.forEach(id => o[id] /= n);
+  return n ? o : null;
+}
 function coBotExpert(G, p, N = 40) {
   let legal = coLegal(G, p); if (legal.length === 1) return legal[0].id;
   const t = team(p), arr = coArrastre(G), lead = !G.trick.length;
   if (lead && !arr && !G.vueltas && CO_EXP.noLead) {
     const nt = legal.filter(c => c.s !== G.trump);
     if (nt.length) legal = nt;              // con montón y en la primera mano, no se sale de triunfo
+    if (legal.length === 1) return legal[0].id;
+  }
+  // con montón: si no puedo ganar la baza, o ya la gana mi compañero y soy el último, no se tira triunfo
+  if (!lead && !arr) {
+    const w = coTrickWinner(G, G.trick), nt = legal.filter(c => c.s !== G.trump);
+    const canWin = legal.some(c => coBeats(c, w.c, G.trump));
+    if (nt.length && (!canWin || (team(w.p) === t && G.trick.length === 3))) legal = nt;
     if (legal.length === 1) return legal[0].id;
   }
   // primera mano, con montón: no fallar una baza con pocos puntos, salvo que tenga un cante (rey y sota) por cantar
@@ -1366,7 +1395,19 @@ function coBotExpert(G, p, N = 40) {
   // guardar triunfos: cuesta tirarlos antes del arrastre (menos en la mano de vueltas, donde pocas veces se llega)
   const k = G.vueltas ? CO_EXP.vueltasScale : 1;
   const pen = c => arr || c.s !== G.trump ? 0 : k * (CO_EXP.trumpPen + CSTR[c.r] * CO_EXP.trumpPen / 10 + (lead ? CO_EXP.leadPen + (CSTR[c.r] >= 8 ? CO_EXP.leadPen : 0) : 0));
-  let best = null, bv = -1e9; for (const c of legal) { const v = tot[c.id] / n - pen(c) + Math.random() * 1e-3; if (v > bv) { bv = v; best = c.id; } }
+  // última baza con montón y una pinta gorda sin cambiar: se miran a fondo las tres mejores opciones
+  if (CO_EXP.deepLast && G.stock.length === 4 && !G.swapped && C_CAMBIABLE.includes(G.pinta.r) && legal.length > 1) {
+    const top = legal.slice().sort((a, b) => (tot[b.id] - pen(b) * n) - (tot[a.id] - pen(a) * n)).slice(0, 3).map(c => c.id);
+    const dv = coDeepVals(G, p, top, CO_EXP.deepLast);
+    if (dv) { let b2 = null, v2 = -1e9; for (const id of top) { const c = coCard(id), v = dv[id] - pen(c) + Math.random() * 1e-3; if (v > v2) { v2 = v; b2 = id; } } return b2; }
+  }
+  // irse de palos distintos al compañero: al descartar, evita los palos que él ya va soltando
+  const dsc = c => {
+    if (!CO_EXP.discW || arr || lead || c.s === G.trump || !G.disc) return 0;
+    const w = coTrickWinner(G, G.trick); if (coBeats(c, w.c, G.trump) || c.s === G.trick[0].c.s) return 0;
+    return G.disc[(p + 2) % 4][c.s] > 0 ? -CO_EXP.discW : G.disc[p][c.s] > 0 ? CO_EXP.discW / 2 : 0;
+  };
+  let best = null, bv = -1e9; for (const c of legal) { const v = tot[c.id] / n - pen(c) + dsc(c) + Math.random() * 1e-3; if (v > bv) { bv = v; best = c.id; } }
   return best;
 }
 // En la mano de vueltas: carta que gana la baza seguro y con la que se llega a 101
@@ -1440,7 +1481,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-01-1';
+const APP_VER = 'cau-2026-11-01-2';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
