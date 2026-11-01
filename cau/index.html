@@ -1692,7 +1692,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-02-3';
+const APP_VER = 'cau-2026-11-02-4';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
@@ -1806,7 +1806,8 @@ function renderHand() {
   const mine = myTurn();
   $('hand').innerHTML = S.hands[0].filter(c => !(fx && fx.card.id === c.id)).slice(0, dealView ? dealView.n[0] : 3).map(c => {
     const [h, cls] = mine && SETTINGS.hints ? hintFor(c.id) : ['', ''];
-    return `<button class="hc" type="button" data-id="${c.id}" ${mine ? '' : 'disabled'}>${cardHTML(c)}<span class="hint ${cls}" ${h ? '' : 'style="visibility:hidden"'}>${h || '·'}</span></button>`;
+    const tw = mine && TUTG && TUTG.cau ? tutCauWant() : null, lock = mine && TUTG && TUTG.cau && ((tw != null && c.id !== tw) || (S.round === 2 && canFirst(S, 0)));
+    return `<button class="hc ${tw === c.id ? 'tutpick' : ''}" type="button" data-id="${c.id}" ${mine && !lock ? '' : 'disabled'}>${cardHTML(c)}<span class="hint ${cls}" ${h ? '' : 'style="visibility:hidden"'}>${h || '·'}</span></button>`;
   }).join('');
 }
 
@@ -1852,6 +1853,7 @@ function render() {
   $('hand').classList.remove('co-hand');
   document.body.classList.toggle('deck-clasica', SETTINGS.deck === 'clasica');
   renderScore(0); renderScore(1);
+  if (TUTG && TUTG.cau) { $('coach').hidden = false; $('coach').innerHTML = tutCauCoach(); }
   $('info').textContent = L(`Mano ${S.handNo} · Reparto ${Math.max(1, S.round)}/3 · Mazo ${S.deck.length}`, `Mà ${S.handNo} · Repartiment ${Math.max(1, S.round)}/3 · Baralla ${S.deck.length}`);
   $('lbl0').textContent = TEAMN[0]; $('lbl1').textContent = TEAMN[1];
   $('brand').textContent = 'Cau';
@@ -1986,7 +1988,8 @@ async function loop() {
         await sleep(700);
         if (botSing(S, S.turn)) { render(); await drainFeed(); continue; }
         await sleep(500);
-        await doPlay(S.turn, botChoose(S, S.turn));
+        const forcedC = TUTG && TUTG.cau ? tutCauWant() : null;
+        await doPlay(S.turn, forcedC != null ? forcedC : botChoose(S, S.turn));
       } else if (S.phase === 'nit') {
         if (humanSpeaks(S)) break;
         render();
@@ -2005,6 +2008,7 @@ const winTitle = () => S.winner === 0 ? L('¡Habéis ganado la partida!', 'Heu g
 function scoreLine(i) { const [n, w] = scoreTxt(S.score[i]); return `${n} ${w}`; }
 
 function showSummary() {
+  if (TUTG && TUTG.cau) return showGuidedCauEnd();
   shareRec(S.rec, 'cau', { score: S.score.slice(), over: !!S.over, winner: S.over ? S.winner : null, falta: !!S.endFalta, mid: !!S.endMid });
   if (S.phase === 'gameEnd') {
     const why = S.endFalta ? L('Se la han jugado en el de nit.', "S'ho han jugat en el de nit.") : L('Han llegado a 40 durante la mano.', 'Han arribat a 40 durant la mà.');
@@ -2372,6 +2376,63 @@ function netLeave(quiet) {
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && NET && NET.role === 'host') { netSend({ t: 'ping' }); netSchedule(); if (NET.started && !busy) cotoLoop(); } });
 
+
+/* ---------------- Partida guiada (Cau) ---------------- */
+// reparte Vicent, sales tú. Primer reparto preparado: escala, bac, rebac, Sant Vicent y limpia; en el segundo tienes pareja (de nit)
+const TUTC_R1 = { table: [4, 15, 26, 39], hands: [[34, 31, 19], [21, 29, 22], [11, 5, 13], [1, 6, 12]], plays: [34, 21, 11, 1, 31, 29, 5, 6, 19, 22, 13, 12] };
+const TUTC_R2 = [[8, 38, 7], [10, 23, 36], [20, 14, 37], [0, 25, 3]];
+function tutCauWant() {
+  if (!TUTG || !TUTG.cau || S.round !== 1 || S.phase !== 'play') return null;
+  const done = 12 - S.hands.reduce((a, h) => a + h.length, 0);
+  return TUTC_R1.plays[done] ?? null;
+}
+function startGuidedCau() {
+  TUTG = { cau: true }; GEN++; busy = false; coDealView = null; dealView = null; fx = null; coFx = null;
+  APP.mode = 'cau'; APP.M = null; closePanel();
+  S = newGame(); S.feed = []; S.log = []; S.dealer = 3; S.turn = 0; S.rec = null;
+  S.table = []; S.slots = {}; S.hands = [[], [], [], []]; S.dealSeq = []; S.aside = []; S.asideIds = [];
+  const cc = id => ({ ...coCard(id) });
+  for (let k = 0; k < 4; k++) {
+    const c = cc(TUTC_R1.table[k]); const slot = pickSlot(S); S.slots[c.id] = slot; S.table.push(c); S.dealSeq.push({ to: 'T', card: c, slot });
+    if (k < 3) for (const p of [0, 1, 2, 3]) { const d = cc(TUTC_R1.hands[p][k]); S.hands[p].push(d); S.dealSeq.push({ to: p, id: d.id }); }
+  }
+  S.public = S.table.map(c => c.id);
+  const used = new Set([...TUTC_R1.table, ...TUTC_R1.hands.flat(), ...TUTC_R2.flat()]);
+  const r3 = []; for (let id = 0; id < 40; id++) if (!used.has(id)) r3.push(id);
+  const pops = []; for (let k = 0; k < 3; k++) for (let p = 0; p < 4; p++) pops.push(TUTC_R2[p][k]);
+  for (let k = 0; k < 3; k++) for (let p = 0; p < 4; p++) pops.push(r3[p * 3 + k]);
+  S.deck = pops.reverse().map(cc);
+  S.round = 1; postDeal(S);
+  narr = '';
+  beginHand();
+}
+function tutCauCoach() {
+  const N = NAMES, me = S.turn === 0 && S.phase === 'play' && !busy;
+  if (dealView && S.round > 1) return L('Nuevo reparto: 3 cartas más a cada uno. La mesa sigue como estaba.', 'Nou repartiment: 3 cartes més a cadascú. El tapet continua com estava.');
+  if (dealView) return L('<b>Partida guiada de Cau.</b> Reparte Vicent: 4 cartas a la mesa y 3 a cada uno. Aquí solo cuenta el número, no el palo.', '<b>Partida guiada de Cau.</b> Reparteix Vicent: 4 cartes al tapet i 3 a cadascú. Ací només compta el número, no el pal.').replace('Vicent', N[3]);
+  if (S.round === 1) {
+    const done = 12 - S.hands.reduce((a, h) => a + h.length, 0);
+    if (done === 0) return L('En la mesa hay un <b>5</b>, un 6 y un 7. Con tu <b>5 de bastos</b> capturas el 5 y, como siguen el 6 y el 7, te los llevas también: es una <b>escala</b>. ¡Juégalo!', 'Al tapet hi ha un <b>5</b>, un 6 i un 7. Amb el teu <b>5 de bastos</b> arrepleges el 5 i, com que continuen el 6 i el 7, també te\'ls endús: és una <b>escala</b>. Juga\'l!');
+    if (done === 1) return L(`${N[1]} no puede capturar nada: su carta se queda en la mesa.`, `${N[1]} no pot arreplegar res: la seua carta es queda al tapet.`);
+    if (done === 2) return L(`Fíjate: ${N[2]} va a matar la carta que <b>acaba de dejar</b> ${N[1]}. Eso es un <b>bac</b>: 2 puntos.`, `Fixa't: ${N[2]} matarà la carta que <b>acaba de deixar</b> ${N[1]}. Això és un <b>bac</b>: 2 punts.`);
+    if (done === 3) return L(`¡Bac de ${N[2]}! Ahora ${N[3]} mata el bac con otro 2: es un <b>rebac</b>, 3 puntos, y el bac pierde los suyos.`, `Bac de ${N[2]}! Ara ${N[3]} mata el bac amb un altre 2: és un <b>rebac</b>, 3 punts, i el bac perd els seus.`);
+    if (done === 4) return L('Tienes el <b>último 2</b>. Si lo echas haces <b>Sant Vicent</b>: 5 puntos para vosotros, el rebac pierde sus 3 y os lleváis los cuatro doses. ¡Échalo!', 'Tens l\'<b>últim 2</b>. Si el tires fas <b>Sant Vicent</b>: 5 punts per a vosaltres, el rebac perd els seus 3 i us emporteu els quatre dosos. Tira\'l!');
+    if (done === 5) return L(`¡Sant Vicent! Ahora ${N[1]} se lleva el rey que quedaba y deja la mesa vacía: eso es una <b>limpia</b>, 1 punto.`, `Sant Vicent! Ara ${N[1]} s'emporta el rei que quedava i deixa el tapet buit: això és una <b>limpia</b>, 1 punt.`);
+    if (done === 8) return L('No puedes capturar nada: juega el <b>rey de copas</b> y se quedará en la mesa.', 'No pots arreplegar res: juga el <b>rei de copes</b> i es quedarà al tapet.');
+    if (done >= 9) return L(`Mira ${N[3]}: captura un 3 y, como hay un 4 en la mesa, se lo lleva también (escala).`, `Mira ${N[3]}: arreplega un 3 i, com que hi ha un 4 al tapet, també se l'emporta (escala).`);
+    return L('Los demás juegan… Cuando alguien no captura, su carta se queda en la mesa.', 'Els altres juguen… Quan algú no arreplega, la seua carta es queda al tapet.');
+  }
+  if (S.round === 2 && canFirst(S, 0)) return L('Segundo reparto. ¡Tienes <b>pareja de caballos</b>! Antes de jugar, pulsa <b>Cantar de nit</b>: si nadie más canta, os apuntáis un punto.', 'Segon repartiment. Tens <b>parella de cavalls</b>! Abans de jugar, prem <b>Cantar de nit</b>: si ningú més canta, us apunteu un punt.');
+  if (S.round === 2) return L('Ahora juega tú solo. Busca capturar, y sobre todo fíjate en la carta que deja el rival de tu izquierda: si tienes una igual, ¡bac!', 'Ara juga tu sol. Busca arreplegar, i sobretot fixa\'t en la carta que deixa el rival de la teua esquerra: si en tens una d\'igual, bac!');
+  return L('Último reparto: aquí todos los que tienen pareja cantan al principio. Al acabar, quien capturó el último se lleva lo que queda en la mesa, y cada pareja suma un punto por cada carta por encima de 20.', 'Últim repartiment: ací tots els que tenen parella canten al principi. En acabar, qui va arreplegar l\'últim s\'endú el que queda al tapet, i cada parella suma un punt per cada carta per damunt de 20.');
+}
+function showGuidedCauEnd() {
+  showPanel(`<h2>${L('¡Ya sabes jugar al Cau!', 'Ja saps jugar al Cau!')}</h2>
+  <p class="big-result">${TEAMN[0]} ${S.score[0]} · ${TEAMN[1]} ${S.score[1]}</p>
+  <p>${L('En una partida de verdad se siguen jugando manos hasta que una pareja llega a <b>40 puntos</b>, y gana en el momento en que llega. Las reglas completas (pixat, apuestas del de nit…) están en Reglas.', 'En una partida de veritat es continuen jugant mans fins que una parella arriba a <b>40 punts</b>, i guanya en el moment en què hi arriba. Les regles completes (pixat, apostes del de nit…) estan en Regles.')}</p>
+  <div class="acts"><button class="btn" type="button" data-act="menu">${L('Menú', 'Menú')}</button><button class="btn primary" type="button" data-act="tut-play" data-g="cau">${L('Jugar al Cau', 'Jugar al Cau')}</button></div>`);
+}
+
 /* ---------------- Partida guiada (Coto) ---------------- */
 // reparto preparado: reparte Vicent, sales tú, pintan oros (rey de oros) y tú tienes el 7 de oros y rey y sota de espadas
 const TUT_ME = { 0: 13, 1: 1, 2: 16, 3: 22 };                       // 4 de copas, 2 de oros, 7 de copas, 3 de espadas
@@ -2479,6 +2540,7 @@ function showTutMenu() {
   panelBack = 'menu';
   showPanel(`<div class="menu" style="display:flex;flex-direction:column;gap:14px"><h2>Tutorial</h2><div class="stack">
     <button class="btn playopt" type="button" data-act="learn"><b>${L('Aprender a jugar', 'Aprendre a jugar')}</b><small>${L('Las reglas del Coto y del Cau, paso a paso y con cartas de ejemplo', 'Les regles del Coto i del Cau, pas a pas i amb cartes d\'exemple')}</small></button>
+    <button class="btn playopt" type="button" data-act="guided-cau"><b>${L('Partida guiada de Cau', 'Partida guiada de Cau')}</b><small>${L('Una mano de Cau: capturas, escalas, bac, rebac, Sant Vicent, limpia y de nit', 'Una mà de Cau: arreplegar, escales, bac, rebac, Sant Vicent, limpia i de nit')}</small></button>
     <button class="btn playopt" type="button" data-act="guided"><b>${L('Partida guiada de Coto', 'Partida guiada de Coto')}</b><small>${L('Juega una mano mientras te explicamos cada jugada', 'Juga una mà mentre t\'expliquem cada jugada')}</small></button>
   </div><div class="acts"><button class="btn" type="button" data-act="back">${L('Volver', 'Tornar')}</button></div></div>`);
   $('panel').classList.add('menu'); cover();
@@ -2489,7 +2551,7 @@ function showTutorial(g, i) {
   const cards = st.cards.length ? `<div class="tcards">${st.cards.map(([id, cap, dim]) => `<div class="tc ${dim ? 'dim' : ''}">${cardHTML(coCard(id))}${cap ? `<small>${cap}</small>` : ''}</div>`).join('')}</div>` : '';
   const dots = `<div class="dots">${steps.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</div>`;
   const prev = i > 0 ? `<button class="btn" type="button" data-act="tut" data-g="${g}" data-i="${i - 1}">${L('Anterior', 'Anterior')}</button>` : `<button class="btn" type="button" data-act="tutorial">${L('Volver', 'Tornar')}</button>`;
-  const next = last && g === 'coto' ? `<button class="btn primary" type="button" data-act="guided">${L('Partida guiada', 'Partida guiada')}</button>` : last ? `<button class="btn primary" type="button" data-act="tut-play" data-g="${g}">${L(`Jugar al ${g === 'coto' ? 'Coto' : 'Cau'}`, `Jugar al ${g === 'coto' ? 'Coto' : 'Cau'}`)}</button>`
+  const next = last && g === 'cau' ? `<button class="btn primary" type="button" data-act="guided-cau">${L('Partida guiada', 'Partida guiada')}</button>` : last && g === 'coto' ? `<button class="btn primary" type="button" data-act="guided">${L('Partida guiada', 'Partida guiada')}</button>` : last ? `<button class="btn primary" type="button" data-act="tut-play" data-g="${g}">${L(`Jugar al ${g === 'coto' ? 'Coto' : 'Cau'}`, `Jugar al ${g === 'coto' ? 'Coto' : 'Cau'}`)}</button>`
     : `<button class="btn primary" type="button" data-act="tut" data-g="${g}" data-i="${i + 1}">${L('Siguiente', 'Següent')}</button>`;
   showPanel(`<div class="tut" data-tut="1">${tabs}<h2>${L(st.t[0], st.t[1])}</h2>${cards}<p>${L(st.h[0], st.h[1])}</p>${dots}<div class="acts">${prev}${next}</div></div>`);
   panelBack = 'menu'; cover();
@@ -2531,6 +2593,7 @@ $('hand').addEventListener('click', async e => {
     return cotoLoop();
   }
   if (!myTurn()) return;
+  if (TUTG && TUTG.cau) { const w = tutCauWant(); if ((w != null && +b.dataset.id !== w) || (S.round === 2 && canFirst(S, 0))) return; }
   busy = true;
   try { await doPlay(0, +b.dataset.id); } finally { busy = false; }
   loop();
@@ -2605,6 +2668,7 @@ $('panel').addEventListener('click', e => {
   if (a === 'tut') showTutorial(b.dataset.g, +b.dataset.i);
   if (a === 'tut-play') startGame(b.dataset.g);
   if (a === 'guided') startGuided();
+  if (a === 'guided-cau') startGuidedCau();
   if (a === 'online') { if (devOpen) showOnline(); else showOnlinePw(); }
   if (a === 'online-pw') { const v = ($('onpw') || {}).value || ''; if (v.trim().toLowerCase() === 'alcoi') { devOpen = true; showOnline(); } else showOnlinePw(true); }
   if (a === 'net-host') netHost(($('netname') || {}).value);
