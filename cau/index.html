@@ -996,7 +996,8 @@ function cotoNewHand(G) {
   G.phase = 'play'; G.handSummary = null;
   G.prevRec = G.rec || null;
   G.rec = { game: 'coto', partidaNo: G.partidaNo, handNo: G.handNo, vueltas: G.vueltas, dealer: G.dealer, wins: G.wins.slice(), bestOf: G.bestOf,
-    score: G.score.slice(), pinta: cn(G.pinta), trump: G.trump, levels: typeof SETTINGS !== 'undefined' ? [SETTINGS.partner, SETTINGS.rivals] : [], hands: G.hands.map(h => h.map(cn)), ev: [] };
+    score: G.score.slice(), pinta: cn(G.pinta), trump: G.trump, levels: typeof SETTINGS !== 'undefined' ? [SETTINGS.partner, SETTINGS.rivals] : [], hands: G.hands.map(h => h.map(cn)), ev: [],
+    online: typeof NET !== 'undefined' && NET && NET.role === 'host' ? [0, 1, 2, 3].map(p => p === 0 ? { h: NET.name } : NET.seats[p].kind === 'human' ? { h: NET.seats[p].name } : { bot: levelOf(p) }) : null };
   coSay(G, L(`${G.vueltas ? 'Mano de vueltas' : 'Mano'}: reparte ${NAMES[G.dealer]}. Pintan ${SUITN[G.trump]}.`,
     `${G.vueltas ? 'Mà de voltes' : 'Mà'}: reparteix ${NAMES[G.dealer]}. Pinten ${SUITN[G.trump]}.`), 'hand');
 }
@@ -1530,7 +1531,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-01-7';
+const APP_VER = 'cau-2026-11-01-8';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
@@ -1548,7 +1549,7 @@ async function shareFlush() {
   } catch (e) {} finally { shareBusy = false; }
 }
 function shareRec(rec, juego, result) {
-  if (!rec || rec.sent || !SETTINGS.share || TUTG || NET) return;
+  if (!rec || rec.sent || !SETTINGS.share || TUTG || (NET && NET.role === 'guest')) return;
   rec.sent = true; save();   // que no se vuelva a enviar si se reabre la app en el resumen
   const datos = JSON.parse(JSON.stringify(rec)); delete datos.sent; delete datos.cur; datos.result = result;
   try {
@@ -1919,7 +1920,8 @@ const lvlName = v => ({ facil: 'fácil', normal: 'normal', dificil: 'difícil', 
 const strip = t => String(t).replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
 function exportText(rec) {
   if (!rec) return '';
-  const who = `Asientos: Tú, D=${NAMES[1]} (rival derecha), C=${NAMES[2]} (compañera), I=${NAMES[3]} (rival izquierda). Niveles: compañera ${lvlName(rec.levels[0])}, rivales ${lvlName(rec.levels[1])}.`;
+  const who = rec.online ? `Partida online. Asientos: ${rec.online.map((x, q) => `${SEATC[q]}=${x.h ? x.h + ' (persona)' : 'bot ' + lvlName(x.bot)}`).join(', ')}.`
+    : `Asientos: Tú, D=${NAMES[1]} (rival derecha), C=${NAMES[2]} (compañera), I=${NAMES[3]} (rival izquierda). Niveles: compañera ${lvlName(rec.levels[0])}, rivales ${lvlName(rec.levels[1])}.`;
   const out = [];
   if (rec.game === 'coto') {
     out.push(`COTO · partida ${rec.partidaNo} · ${rec.vueltas ? 'MANO DE VUELTAS' : 'primera mano (no es de vueltas)'} · mano nº ${rec.handNo}`);
@@ -2085,7 +2087,7 @@ function netStart() {
   for (const q of [1, 2, 3]) if (NET.seats[q].kind === 'human') NAMES[q] = NET.seats[q].name;
   NET.started = true; GEN++; busy = false; coDealView = null; dealView = null; fx = null; coFx = null; coShowLast = false; coHide = new Set(); coPend = 0; coReveal = false;
   APP.mode = 'coto'; APP.M = null; TUTG = null;
-  G = cotoNewMatch(SETTINGS.cotoBest || 5); G.remotePass = {}; G.rec = null;
+  G = cotoNewMatch(SETTINGS.cotoBest || 5); G.remotePass = {};
   netSend({ t: 'start' });
   showPanel(`<h2>${L('¡Empieza la partida!', 'Comença la partida!')}</h2>${netWarnHost()}<div class="acts"><button class="btn primary" type="button" data-act="net-stay">${L('Entendido', 'Entesos')}</button></div>`);
   beginCoto();
@@ -2396,7 +2398,7 @@ $('panel').addEventListener('click', e => {
   if (a === 'play-cau') startGame('cau');
   if (a === 'play-coto' || a === 'play-cotocau') { const t = a.slice(5); startGame(t); }
   if (a === 'co-next') { coNext(G); closePanel(); beginCoto(); }
-  if (a === 'newcoto') { if (NET && NET.role === 'host') { G = cotoNewMatch(SETTINGS.cotoBest || 5); G.remotePass = {}; G.rec = null; closePanel(); beginCoto(); } else startGame('coto'); }
+  if (a === 'newcoto') { if (NET && NET.role === 'host') { G = cotoNewMatch(SETTINGS.cotoBest || 5); G.remotePass = {}; closePanel(); beginCoto(); } else startGame('coto'); }
   if (a === 'match') matchNext();
   if (a === 'match-go') matchGo();
   if (a === 'match-tb') matchTiebreak();
