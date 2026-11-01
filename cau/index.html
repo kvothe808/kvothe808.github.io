@@ -1276,7 +1276,7 @@ function coDeterminize0(G, p) {
   return null;
 }
 function coRolloutValue(d, t) { return (d.pts[t] + d.cantes[t]) - (d.pts[1 - t] + d.cantes[1 - t]); }
-const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12, noLead: true, minTrumpPts: 10, solve: 7, protect: true, deepLast: 8, discW: 1, signals: false, markW: 6, noGift: true, N: 80, refine: 12, refineN: 400, refineMs: 250, safe3: true, winW: 60, vueltasScale: 0.2 };
+const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12, noLead: true, minTrumpPts: 10, solve: 7, protect: true, deepLast: 8, discW: 1, signals: false, markW: 6, noGift: true, N: 80, refine: 12, refineN: 400, refineMs: 250, safe3: true, secoW: 4, winW: 60, vueltasScale: 0.2 };
 // Muy difícil. El metajuego cambia según el momento:
 // · mano normal, con montón: se guardan los triunfos para el arrastre y nunca se sale de triunfo;
 // · arrastre: se puede salir de triunfo para quitar los de los rivales;
@@ -1601,7 +1601,13 @@ function coBotExpert(G, p, N = CO_EXP.N || 40) {
     if (!myPair.length) return -CO_EXP.markW;   // sin cante no se marca: así la seña es de fiar
     return (G.marked && G.marked[p]) || myPair.includes(c.s) ? 0 : CO_EXP.markW;
   };
-  let best = null, bv = -1e9; for (const c of legal) { const v = tot[c.id] / n - pen(c) + dsc(c) + mk(c) + Math.random() * 1e-3; if (v > bv) { bv = v; best = c.id; } }
+  // no dejar un as o un 3 (que no sea de triunfo) solo en su palo para el arrastre
+  const seco = c => {
+    if (!CO_EXP.secoW || arr || c.s === G.trump || c.r === 0 || c.r === 2) return 0;
+    const rest = G.hands[p].filter(x => x.s === c.s && x.id !== c.id);
+    return rest.length === 1 && (rest[0].r === 0 || rest[0].r === 2) ? -CO_EXP.secoW : 0;
+  };
+  let best = null, bv = -1e9; for (const c of legal) { const v = tot[c.id] / n - pen(c) + dsc(c) + mk(c) + seco(c) + Math.random() * 1e-3; if (v > bv) { bv = v; best = c.id; } }
   return best;
 }
 // En la mano de vueltas: carta que gana la baza seguro y con la que se llega a 101
@@ -1692,7 +1698,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-02-4';
+const APP_VER = 'cau-2026-11-02-5';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
