@@ -1629,7 +1629,13 @@ function coBotCantes(G, p) {
   const ss = coCantesFor(G, p); if (!ss.length) return [];
   return ss;
 }
-function coBotSwap(G, p) { return coCanSwap(G, p); }
+// cambiar el 7: como en la mesa, se espera al final (última baza con montón) salvo que el cambio dé las 40
+function coBotSwap(G, p) {
+  if (!coCanSwap(G, p)) return false;
+  if (G.stock.length <= 4) return true;
+  const pr = G.pinta.r, other = pr === C_REY ? C_SOTA : pr === C_SOTA ? C_REY : null;
+  return other != null && !G.sung.includes(G.trump) && G.hands[p].some(c => c.s === G.trump && c.r === other);
+}
 
 /* ---------------- Cartas españolas ---------------- */
 const SUITCOL = ['#9c700c','#a8222a','#24497e','#33641f'];
@@ -1668,7 +1674,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-01-14';
+const APP_VER = 'cau-2026-11-01-15';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
@@ -2741,7 +2747,7 @@ async function cotoLoop() {
       if (humanSeat(G.turn)) break;
       render(); await sleep(650);
       const p = G.turn;
-      if (coCanSwap(G, p)) { await coAnimSwap(p); await coDrain(); }
+      if (coBotSwap(G, p)) { await coAnimSwap(p); await coDrain(); }
       await sleep(350);
       const forced = TUTG && TUT_BOTS[G.trickNo] ? TUT_BOTS[G.trickNo][p] : null;
       await coDoPlay(p, forced != null ? forced : coBotChoose(G, p, levelOf(p)));
