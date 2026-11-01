@@ -1692,7 +1692,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-02-2';
+const APP_VER = 'cau-2026-11-02-3';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
@@ -1864,6 +1864,7 @@ function render() {
 
 let calloutTimer = null;
 async function callout(txt, sub, wait = true) {
+  if (NET && NET.role === 'host' && NET.started && isCoto()) netEv({ k: 'callout', txt, sub });
   const el = $('callout'); const d = 1700 * SPEEDS[speedIx][1];
   el.innerHTML = `<div class="call" style="--cd:${d}ms"><b>${txt}</b>${sub ? `<span>${sub}</span>` : ''}</div>`;
   clearTimeout(calloutTimer); calloutTimer = setTimeout(() => { el.innerHTML = ''; }, d);
@@ -2167,6 +2168,32 @@ async function netOpen(name, onMsg) {
 const netId = () => { try { let id = localStorage.getItem('cau.netid'); if (!id) { id = 'p' + Math.random().toString(36).slice(2, 9); localStorage.setItem('cau.netid', id); } return id; } catch (e) { return 'p' + Math.random().toString(36).slice(2, 9); } };
 const netCode = () => Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random() * 24)]).join('');
 function netSend(m) { try { NET && NET.pub && NET.pub.send(m); } catch (e) {} }
+
+// Animaciones para los invitados: el anfitrión manda cada vuelo y cada aviso; el invitado los reproduce desde su sitio
+function netEv(e) {
+  if (!NET || NET.role !== 'host' || !NET.started) return;
+  for (const q of [1, 2, 3]) {
+    const st = NET.seats[q]; if (st.kind !== 'human' || !st.online || !NET.priv[st.id]) continue;
+    const rot = x => typeof x === 'number' ? (x - q + 4) % 4 : x;
+    const ev = { ...e, p: rot(e.p), from: rot(e.from) };
+    if (e.k === 'callout' && e.sub) ev.sub = e.sub === NAMES[0] ? NET.name : e.sub === st.name ? L('Tú', 'Tu') : e.sub;
+    try { NET.priv[st.id].send({ t: 'ev', e: ev }); } catch (x) {}
+  }
+}
+let netChain = Promise.resolve(), netFx = null;
+function netGuestEv(e) {
+  netChain = netChain.then(async () => {
+    if (!NET || NET.role !== 'guest' || !G) return;
+    const stockC = () => $('costock') ? coCenter($('costock')) : coCenter($('table'));
+    const seatC = p => coCenter(coSeatTarget(p));
+    const card = (id, w) => `<div style="--cw:${w}px">${cardHTML(coCard(id))}</div>`;
+    if (e.k === 'draw') await coFly(stockC(), seatC(e.p), e.pinta || e.p === 0 ? card(e.id, 46) : '<span class="back"></span>', 240);
+    else if (e.k === 'deal') { const src = e.from === 0 ? $('hand') : ($('seat' + e.from).querySelector('.av') || $('seat' + e.from)); const tb = $('table').getBoundingClientRect();
+      await coFly(coCenter(src), e.p === 'T' ? [tb.left + tb.width / 2, tb.top + tb.height / 2] : seatC(e.p), '<span class="back"></span>'.repeat(e.n || 1), 150); }
+    else if (e.k === 'swap') { const pc = $('copinta') ? coCenter($('copinta')) : coCenter($('table')); await coFly(seatC(e.p), pc, card(e.seven, 50), 420); await coFly(pc, seatC(e.p), card(e.pinta, 50), 420); }
+    else if (e.k === 'callout') callout(e.txt, e.sub, false);
+  }).catch(() => {});
+}
 const humanSeat = p => p === 0 || !!(NET && NET.role === 'host' && NET.started && NET.seats[p].kind === 'human' && NET.seats[p].online);
 function netCanteWait() {
   if (NET.role !== 'host' || G.trick.length) return false;
@@ -2298,12 +2325,18 @@ function netGuestMsg(m) {
     return;
   }
   if (m.t === 'start') { NET.started = true; return; }
+  if (m.t === 'ev') return netGuestEv(m.e);
   if (m.t === 'bye') { const n = NET.host || L('El anfitrión', 'L\'amfitrió'); netLeave(true); showPanel(`<h2>${L('Partida cerrada', 'Partida tancada')}</h2><p>${L(`${esc(n)} ha cerrado la sala.`, `${esc(n)} ha tancat la sala.`)}</p><div class="acts"><button class="btn primary" type="button" data-act="menu">${L('Menú', 'Menú')}</button></div>`); return; }
   if (m.t === 'view') {
     const v = m.v; NET.started = true;
     for (let i = 0; i < 4; i++) NAMES[i] = v.names[i];
     coDealView = v.ui.dv; coShowLast = v.ui.showLast; coReveal = v.ui.reveal; coPend = v.ui.pend; coHide = new Set(v.ui.hide); coFx = null; busy = v.ui.busy;
+    const prev = G && NET.started ? G : null;
     G = Object.assign({ game: 'coto', log: [], feed: [], voids: [[], [], [], []], revealed: [[], [], [], []], played: [] }, v); G.cantePass = v.cantePass;
+    // carta recién jugada: cae en la mesa como en el juego normal
+    if (prev && v.trick.length && (prev.trickNo !== v.trickNo || prev.trick.length < v.trick.length)) { const x = v.trick[v.trick.length - 1]; netFx = { p: x.p, id: x.c.id, until: Date.now() + 600 }; }
+    if (v.ui.showLast) netFx = null;
+    coFx = netFx && Date.now() < netFx.until ? { p: netFx.p, id: netFx.id } : null;
     APP.mode = 'coto'; APP.M = null; narr = '';
     const ended = ['handEnd', 'partidaEnd', 'cotoEnd'].includes(G.phase);
     if (!ended && !$('overlay').hidden && !$('panel').querySelector('[data-act="net-stay"]')) closePanel();
@@ -2714,6 +2747,7 @@ async function coAnimDraw() {
   const st = $('costock'), origin = st ? coCenter(st) : coCenter($('table'));
   for (const d of draws) {
     const isPinta = !G.stock.length && d === draws[draws.length - 1];
+    netEv({ k: 'draw', p: d.p, id: d.id, pinta: isPinta });
     await coFly(origin, coCenter(coSeatTarget(d.p)), isPinta || d.p === 0 ? `<div style="--cw:46px">${cardHTML(coCard(d.id))}</div>` : '<span class="back"></span>', 240);
     coHide.delete(d.id); coPend = Math.max(0, coPend - 1); d.p === 0 ? coRenderHand() : coRenderSeat(d.p); coRenderTable(); $('info') && renderCotoInfo();
   }
@@ -2724,6 +2758,7 @@ async function coAnimDraw() {
 async function coAnimSwap(p) {
   const seven = G.hands[p].find(c => c.s === G.trump && c.r === C_SIETE), pinta = G.pinta;
   const from = coCenter(coSeatTarget(p)), pc = $('copinta') ? coCenter($('copinta')) : coCenter($('table'));
+  netEv({ k: 'swap', p, seven: seven.id, pinta: pinta.id });
   await coFly(from, pc, `<div style="--cw:50px">${cardHTML(seven)}</div>`, 420);
   coSwap(G, p); coHide.add(pinta.id); render();
   await coFly(pc, from, `<div style="--cw:50px">${cardHTML(pinta)}</div>`, 420);
@@ -2790,12 +2825,14 @@ async function animateCotoDeal() {
   for (const st of G.dealSeq) {
     if (gen !== GEN || !isCoto()) return;
     const p = st.to;
+    netEv({ k: 'deal', from: G.dealer, p, n: st.n });
     await fly(center(p === 0 ? $('hand') : ($('seat' + p).querySelector('.backs') || $('seat' + p))), st.n);
     if (gen !== GEN || !coDealView) return;
     coDealView.n[p] += st.n; p === 0 ? coRenderHand() : coRenderSeat(p);
   }
   const tb = $('table').getBoundingClientRect();
   // se destapa la pinta
+  netEv({ k: 'deal', from: G.dealer, p: 'T', n: 1 });
   await fly([tb.left + tb.width * 0.5, tb.top + tb.height * 0.5], 1);
   if (gen !== GEN || !coDealView) return;
   coDealView.stock = true; coRenderTable();
