@@ -1276,7 +1276,7 @@ function coDeterminize0(G, p) {
   return null;
 }
 function coRolloutValue(d, t) { return (d.pts[t] + d.cantes[t]) - (d.pts[1 - t] + d.cantes[1 - t]); }
-const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12, noLead: true, minTrumpPts: 10, solve: 6, protect: true, deepLast: 8, discW: 1, signals: false, markW: 6, winW: 60, vueltasScale: 0.2 };
+const CO_EXP = { trumpPen: 5, briscaPen: 0, leadPen: 12, noLead: true, minTrumpPts: 10, solve: 6, protect: true, deepLast: 8, discW: 1, signals: false, markW: 6, noGift: true, N: 80, winW: 60, vueltasScale: 0.2 };
 // Muy difícil. El metajuego cambia según el momento:
 // · mano normal, con montón: se guardan los triunfos para el arrastre y nunca se sale de triunfo;
 // · arrastre: se puede salir de triunfo para quitar los de los rivales;
@@ -1380,7 +1380,7 @@ function coDeepVals(G, p, ids, N) {
   if (n) ids.forEach(id => o[id] /= n);
   return n ? o : null;
 }
-function coBotExpert(G, p, N = 40) {
+function coBotExpert(G, p, N = CO_EXP.N || 40) {
   let legal = coLegal(G, p); if (legal.length === 1) return legal[0].id;
   const t = team(p), arr = coArrastre(G), lead = !G.trick.length;
   if (lead && !arr && !G.vueltas && CO_EXP.noLead) {
@@ -1394,6 +1394,22 @@ function coBotExpert(G, p, N = 40) {
     const canWin = legal.some(c => coBeats(c, w.c, G.trump));
     if (nt.length && (!canWin || (team(w.p) === t && G.trick.length === 3))) legal = nt;
     if (legal.length === 1) return legal[0].id;
+  }
+  // con montón y siendo el último: si puedo ganar la baza sin triunfo y con ello me llevo 10 puntos o más, la gano
+  if (!lead && !arr && G.trick.length === 3) {
+    const w = coTrickWinner(G, G.trick), T = G.trick.reduce((a, x) => a + CPTS[x.c.r], 0);
+    if (team(w.p) !== t) { const ws = legal.filter(c => c.s !== G.trump && coBeats(c, w.c, G.trump) && T + CPTS[c.r] >= 10); if (ws.length) legal = ws; }
+    else { const gs = legal.filter(c => c.s !== G.trump && CPTS[c.r] >= 10); if (gs.length) legal = gs; }   // la baza ya es de mi pareja: cargo un as o un tres
+    if (legal.length === 1) return legal[0].id;
+  }
+  // con montón: no regalar puntos (rey, tres o as) a una baza de los rivales si tengo una carta de 0-2 puntos que tampoco la gana
+  if (!lead && !arr && CO_EXP.noGift) {
+    const w = coTrickWinner(G, G.trick);
+    if (team(w.p) !== t) {
+      const loses = c => !coBeats(c, w.c, G.trump);
+      if (legal.some(c => loses(c) && CPTS[c.r] <= 2)) { const f = legal.filter(c => !(loses(c) && CPTS[c.r] >= 4)); if (f.length) legal = f; }
+      if (legal.length === 1) return legal[0].id;
+    }
   }
   // primera mano, con montón: no fallar una baza con pocos puntos, salvo que tenga un cante (rey y sota) por cantar
   if (!lead && !arr && !G.vueltas && CO_EXP.minTrumpPts) {
@@ -1531,7 +1547,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-01-8';
+const APP_VER = 'cau-2026-11-01-9';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
@@ -1846,7 +1862,7 @@ function showSummary() {
   shareRec(S.rec, 'cau', { score: S.score.slice(), over: !!S.over, winner: S.over ? S.winner : null, falta: !!S.endFalta, mid: !!S.endMid });
   if (S.phase === 'gameEnd') {
     const why = S.endFalta ? L('Se la han jugado en el de nit.', "S'ho han jugat en el de nit.") : L('Han llegado a 40 durante la mano.', 'Han arribat a 40 durant la mà.');
-    showPanel(`<h2>${winTitle()}</h2><p class="big-result">${why}</p><p style="text-align:center">${TEAMN[0]} ${scoreLine(0)} · ${TEAMN[1]} ${scoreLine(1)}</p><div class="acts">${APP.mode === 'cotocau' ? `<button class="btn primary" type="button" data-act="match">${L('Continuar', 'Continuar')}</button>` : `<button class="btn primary" type="button" data-act="newgame">${L('Nueva partida', 'Partida nova')}</button>`}</div>`);
+    showPanel(`<h2>${winTitle()}</h2><p class="big-result">${why}</p><p style="text-align:center">${TEAMN[0]} ${scoreLine(0)} · ${TEAMN[1]} ${scoreLine(1)}</p><div class="acts">${APP.mode === 'cotocau' ? `<button class="btn primary" type="button" data-act="match">${L('Continuar', 'Continuar')}</button>` : `<button class="btn" type="button" data-act="menu">${L('Salir al menú', 'Eixir al menú')}</button><button class="btn primary" type="button" data-act="newgame">${L('Nueva partida', 'Partida nova')}</button>`}</div>`);
     return;
   }
   const R = S.summary; if (!R) return;
@@ -1858,7 +1874,7 @@ function showSummary() {
   <tr class="tot"><td>${L('Total de la mano', 'Total de la mà')}</td><td>${R[0].total}</td><td>${R[1].total}</td></tr>
   <tr class="tot"><td>Marcador</td><td>${scoreLine(0)}</td><td>${scoreLine(1)}</td></tr></tbody></table>
   ${(S.duelNotes || []).map(t => `<p>${t}</p>`).join('')}
-  <div class="acts">${S.over ? (APP.mode === 'cotocau' ? `<button class="btn primary" type="button" data-act="match">${L('Continuar', 'Continuar')}</button>` : `<button class="btn primary" type="button" data-act="newgame">${L('Nueva partida', 'Partida nova')}</button>`) : `<button class="btn primary" type="button" data-act="nexthand">${L('Siguiente mano', 'Mà següent')}</button>`}</div>`);
+  <div class="acts">${S.over ? (APP.mode === 'cotocau' ? `<button class="btn primary" type="button" data-act="match">${L('Continuar', 'Continuar')}</button>` : `<button class="btn" type="button" data-act="menu">${L('Salir al menú', 'Eixir al menú')}</button><button class="btn primary" type="button" data-act="newgame">${L('Nueva partida', 'Partida nova')}</button>`) : `<button class="btn primary" type="button" data-act="nexthand">${L('Siguiente mano', 'Mà següent')}</button>`}</div>`);
 }
 
 function rulesCoto() {
@@ -2402,7 +2418,7 @@ $('panel').addEventListener('click', e => {
   if (a === 'match') matchNext();
   if (a === 'match-go') matchGo();
   if (a === 'match-tb') matchTiebreak();
-  if (a === 'menu') showMenu();
+  if (a === 'menu') { if (NET) netLeave(); showMenu(); }
   if (a === 'rules-cau' || a === 'rules-coto' || a === 'rules-cotocau') { const back = panelBack; showRules(a.slice(6)); panelBack = back; if (back === 'menu') cover(); }
   if (a === 'settings') showSettings();
   if (a === 'rules') { showRules(); panelBack = 'menu'; cover(); }
@@ -2674,7 +2690,7 @@ function showCotoSummary() {
     btn = `<button class="btn primary" type="button" data-act="co-next">${L('Siguiente partida', 'Partida següent')}</button>`;
   } else {
     title = G.winner === 0 ? L('¡Habéis ganado el coto!', 'Heu guanyat el coto!') : L('Han ganado el coto ellos', 'Han guanyat el coto ells');
-    btn = APP.mode === 'cotocau' ? `<button class="btn primary" type="button" data-act="match">${L('Continuar', 'Continuar')}</button>` : `<button class="btn primary" type="button" data-act="newcoto">${L('Nuevo coto', 'Coto nou')}</button>`;
+    btn = APP.mode === 'cotocau' ? `<button class="btn primary" type="button" data-act="match">${L('Continuar', 'Continuar')}</button>` : `<button class="btn" type="button" data-act="menu">${L('Salir al menú', 'Eixir al menú')}</button><button class="btn primary" type="button" data-act="newcoto">${L('Nuevo coto', 'Coto nou')}</button>`;
   }
   const why = G.endMid ? `<p>${L('Se han salido en la mano de vueltas al llegar a 101.', "S'han eixit en la mà de voltes en arribar a 101.")}</p>` : '';
   showPanel(`<h2>${title}</h2>${why}
