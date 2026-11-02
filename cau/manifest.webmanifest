@@ -1,7 +1,7 @@
 {
   "name": "CotoCau",
   "short_name": "CotoCau",
-  "description": "CotoCau: el Coto y el Cau, los juegos de cartas de las filaes de Alcoy. Juega con tu compañera contra dos rivales.",
+  "description": "CotoCau: el Coto y el Cau, los juegos de cartas de las filaes de Alcoy. Juega con tu compañero contra dos rivales.",
   "lang": "es",
   "start_url": "./",
   "scope": "./",
