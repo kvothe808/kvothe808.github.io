@@ -224,6 +224,7 @@ button{font:inherit;color:inherit}
 .netseat b{font-size:14px}.netseat small{display:block;color:var(--ink-soft);font-size:12px}
 .netseat.me{border-color:var(--gold)}.netseat small.netme{color:var(--gold);font-weight:700}
 .netinvite{width:100%}
+.seatsw{display:flex;gap:4px;flex:none}.seatsw .btn{padding:6px 10px;font-size:13px;min-height:0}
 .rxbar{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:10px}.rxbar.wait{opacity:.45;pointer-events:none}
 .btn.rx{padding:6px 10px;font-size:13px;min-height:0}
 .rxfeed{display:flex;flex-direction:column;align-items:center;gap:4px;min-height:24px;margin-top:8px}
@@ -1739,7 +1740,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-02-15';
+const APP_VER = 'cau-2026-11-02-16';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
@@ -2419,7 +2420,7 @@ function netCanteWait() {
 const seatName = p => [L('Tú (anfitrión)', 'Tu (amfitrió)'), L('Rival de la derecha', 'Rival de la dreta'), L('Compañero', 'Company'), L('Rival de la izquierda', "Rival de l'esquerra")][p];
 function showOnline(err) {
   const nm = esc(SETTINGS.alias || '');
-  showPanel(`<h2>Online <span class="devtag">${L('En desarrollo', 'En desenvolupament')}</span></h2>
+  showPanel(`<h2>Online</h2>
   <p>${L('Coto, Cau o CotoCau con amigos, cada uno desde su móvil. Uno crea la sala (el anfitrión) y los demás se unen con el código.', 'Coto, Cau o CotoCau amb amics, cadascú des del seu mòbil. Un crea la sala (l\'amfitrió) i els altres s\'hi uneixen amb el codi.')}</p>
   <div class="opt"><label>${L('Tu nombre', 'El teu nom')}</label><input id="netname" class="netin" maxlength="14" value="${nm}" placeholder="${L('Por ejemplo, Jordi', 'Per exemple, Jordi')}"></div>
   <div class="opt"><label>${L('Crear sala para jugar', 'Crear sala per a jugar')}</label><div class="netmodes">${NETMODES().map(([k, l]) => `<button class="btn primary" type="button" data-act="net-host" data-mode="${k}">${l}</button>`).join('')}</div></div>
@@ -2461,7 +2462,7 @@ async function netHost(name, mode) {
   mode = NETMODES().some(x => x[0] === mode) ? mode : 'coto5';
   if (NETP.count != null && NETP.count >= NET_MAX_TABLES) return showOnline(L(`Ahora mismo están todas las mesas en uso (${NET_MAX_TABLES}/${NET_MAX_TABLES}). Prueba en un rato.`, `Ara mateix estan totes les taules en ús (${NET_MAX_TABLES}/${NET_MAX_TABLES}). Prova-ho d'ací a una estona.`));
   if (name !== SETTINGS.alias && !SETTINGS.alias) { SETTINGS.alias = name; saveSettings(); }
-  NET = { role: 'host', code: netCode(), name, mode, best: mode === 'coto3' ? 3 : mode === 'coto5' ? 5 : (SETTINGS.cotoBest || 5), started: false, priv: {}, seats: [{ kind: 'host', name }, { kind: 'bot' }, { kind: 'free' }, { kind: 'bot' }] };
+  NET = { role: 'host', code: netCode(), name, mode, best: mode === 'coto3' ? 3 : mode === 'coto5' ? 5 : (SETTINGS.cotoBest || 5), started: false, priv: {}, seats: [{ kind: 'host', name }, { kind: 'free' }, { kind: 'free' }, { kind: 'free' }] };
   showPanel(`<h2>${L('Creando sala…', 'Creant sala…')}</h2>`); cover();
   try { NET.keys = await netKeys(false); NET.pub = await netOpen('cc-' + NET.code, netHostPub); }
   catch (e) { NET = null; return showOnline(L('No se ha podido conectar. Comprueba la conexión a internet.', 'No s\'ha pogut connectar. Comprova la connexió a internet.') + ' (' + esc(e.message) + ')'); }
@@ -2473,8 +2474,10 @@ function netLobby() {
   if (!NET || NET.started) return;
   const rows = [1, 2, 3].map(p => {
     const st = NET.seats[p];
-    const who = st.kind === 'human' ? `<small>👤 ${esc(st.name)}${st.online ? '' : ' · ' + L('desconectado', 'desconnectat')}</small>` : st.kind === 'free' ? `<small>${L('Esperando a un jugador…', 'Esperant un jugador…')}</small>` : `<small>Bot · ${esc(NAMES[p])}</small>`;
-    const btn = st.kind === 'human' ? `<button class="btn" type="button" data-act="net-kick" data-seat="${p}">${L('Sacar', 'Traure')}</button>` : `<button class="btn" type="button" data-act="net-seat" data-seat="${p}">${st.kind === 'bot' ? L('Para una persona', 'Per a una persona') : L('Poner bot', 'Posar bot')}</button>`;
+    const who = st.kind === 'human' ? `<small>👤 ${esc(st.name)}${st.online ? '' : ' · ' + L('desconectado', 'desconnectat')}</small>` : st.kind === 'free' ? `<small>${L('Esperando a una persona…', 'Esperant una persona…')}</small>` : `<small>🤖 Bot · ${esc(NAMES[p])}</small>`;
+    // persona sentada: se puede sacar; sitio libre o bot: selector «Persona | Bot» que muestra lo elegido
+    const btn = st.kind === 'human' ? `<button class="btn" type="button" data-act="net-kick" data-seat="${p}">${L('Sacar', 'Traure')}</button>`
+      : `<div class="seatsw"><button class="btn ${st.kind === 'free' ? 'primary' : ''}" type="button" data-act="net-seat" data-seat="${p}" data-kind="free">👤 ${L('Persona', 'Persona')}</button><button class="btn ${st.kind === 'bot' ? 'primary' : ''}" type="button" data-act="net-seat" data-seat="${p}" data-kind="bot">🤖 Bot</button></div>`;
     return `<div class="netseat"><div><b>${seatName(p)}</b>${who}</div>${btn}</div>`;
   }).join('');
   const waiting = NET.seats.some(x => x.kind === 'free');
@@ -2544,7 +2547,7 @@ function netSetAway(q, away) {
   if (isCoto() && G) coSay(G, t); else if (S) S.log.push({ txt: t, k: '' });
   netSchedule(); render(); if (!busy) loop();
 }
-function netHostSeat(p) { const st = NET.seats[p]; if (st.kind === 'bot') NET.seats[p] = { kind: 'free' }; else if (st.kind === 'free') NET.seats[p] = { kind: 'bot' }; netLobby(); }
+function netHostSeat(p, k) { const st = NET.seats[p]; if (st.kind === 'human' || (k !== 'bot' && k !== 'free') || st.kind === k) return; NET.seats[p] = { kind: k }; netLobby(); }
 // Canal común de la sala: solo se atienden saludos. El código de cada jugador sale de su clave pública, no de lo que diga el mensaje.
 async function netHostPub(m) {
   if (!NET || NET.role !== 'host' || !m || m.t !== 'hello' || typeof m.pk !== 'string' || m.pk.length > 200) return;
@@ -3085,7 +3088,7 @@ $('panel').addEventListener('click', e => {
   if (a === 'online') showOnline();
   if (a === 'net-host') netHost(($('netname') || {}).value, b.dataset.mode);
   if (a === 'net-join') netJoin((($('netcode') || {}).value || '').trim().toUpperCase(), ($('netname') || {}).value);
-  if (a === 'net-seat') netHostSeat(+b.dataset.seat);
+  if (a === 'net-seat') netHostSeat(+b.dataset.seat, b.dataset.kind);
   if (a === 'net-kick') netHostKick(+b.dataset.seat);
   if (a === 'net-start') netStart();
   if (a === 'net-sit') netSend({ t: 'sit', id: NET.id, name: NET.name, seat: +b.dataset.seat });
@@ -3446,7 +3449,7 @@ function showPlay() {
     <button class="btn playopt" type="button" data-act="play-cotocau"><b>${lock}CotoCau</b>${dev}<small>${L('Juego completo: Coto, después Cau y desempate', 'Joc complet: Coto, després Cau i desempat')}</small></button>
     <button class="btn playopt" type="button" data-act="play-coto"><b>${lock}Coto</b>${dev}<small>${L(`Al mejor de ${SETTINGS.cotoBest || 5} partidas`, `Al millor de ${SETTINGS.cotoBest || 5} partides`)}</small></button>
     <button class="btn playopt" type="button" data-act="play-cau"><b>Cau</b><small>${L('Partida a 40', 'Partida a 40')}</small></button>
-    <button class="btn playopt" type="button" data-act="online"><b>Online</b><span class="devtag">${L('En desarrollo', 'En desenvolupament')}</span><small>${L('Coto, Cau o CotoCau con amigos, cada uno desde su móvil', 'Coto, Cau o CotoCau amb amics, cadascú des del seu mòbil')}</small></button>
+    <button class="btn playopt" type="button" data-act="online"><b>Online</b><small>${L('Coto, Cau o CotoCau con amigos, cada uno desde su móvil', 'Coto, Cau o CotoCau amb amics, cadascú des del seu mòbil')}</small></button>
   </div><div class="acts"><button class="btn" type="button" data-act="back">${L('Volver', 'Tornar')}</button></div></div>`);
   $('panel').classList.add('menu'); cover();
 }
