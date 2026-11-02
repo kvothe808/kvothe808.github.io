@@ -1740,7 +1740,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-02-16';
+const APP_VER = 'cau-2026-11-02-17';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
@@ -2453,7 +2453,8 @@ function netInviteURL() { const u = new URL(location.href); u.hash = ''; u.searc
 async function netInvite() {
   if (!NET) return;
   const url = netInviteURL();
-  const txt = L(`¡Vente a jugar al ${netModeName(NET.mode)} conmigo en CotoCau! Toca el enlace para entrar en mi sala (código ${NET.code}):`, `Vine a jugar al ${netModeName(NET.mode)} amb mi en CotoCau! Toca l'enllaç per a entrar en la meua sala (codi ${NET.code}):`);
+  const cc = NET.mode === 'cotocau', jm = netModeName(NET.mode);
+  const txt = L(`¡Vente a jugar ${cc ? 'a CotoCau' : 'al ' + jm} conmigo! Toca el enlace para entrar en mi sala de CotoCau (código ${NET.code}):`, `Vine a jugar ${cc ? 'a CotoCau' : 'al ' + jm} amb mi! Toca l'enllaç per a entrar en la meua sala de CotoCau (codi ${NET.code}):`);
   if (navigator.share) { try { await navigator.share({ title: 'CotoCau', text: txt, url }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
   window.open('https://wa.me/?text=' + encodeURIComponent(txt + ' ' + url), '_blank');
 }
