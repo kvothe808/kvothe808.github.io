@@ -1739,7 +1739,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-02-13';
+const APP_VER = 'cau-2026-11-02-14';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
@@ -2215,15 +2215,30 @@ function loadSupabase() {
   if (!supaLoading) supaLoading = new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js'; sc.onload = res; sc.onerror = () => { supaLoading = null; rej(new Error('no se pudo cargar')); }; document.head.appendChild(sc); });
   return supaLoading;
 }
+// Canales privados de Supabase: cada móvil abre una sesión anónima (el usuario no ve nada) y solo con sesión se entra en las salas.
+// De momento solo con «?priv=1» en la dirección, para probarlo antes de activarlo para todos.
+const NET_PRIVATE = /[?&#]priv=1\b/.test(location.href);
+const NET_PKEY = 'm' + Math.random().toString(36).slice(2, 10);   // clave del contador de mesas (una por apertura de la app)
+async function netClient() {
+  await loadSupabase();
+  if (!netOpen.client) netOpen.client = window.supabase.createClient(SUPA_BASE, SUPA.key);
+  const c = netOpen.client;
+  if (NET_PRIVATE && !netOpen.authed) {
+    let { data } = await c.auth.getSession();
+    let ses = data && data.session;
+    if (!ses) { const r = await c.auth.signInAnonymously(); if (r.error) throw new Error(r.error.message); ses = r.data.session; }
+    c.realtime.setAuth(ses.access_token);
+    netOpen.authed = true;
+  }
+  return c;
+}
 async function netOpen(name, onMsg) {
   if (/net=local/.test(location.search) || /net=local/.test(location.hash)) {
     const bc = new BroadcastChannel(name); bc.onmessage = e => onMsg(e.data);
     return { send: m => bc.postMessage(m), close: () => bc.close() };
   }
-  await loadSupabase();
-  if (!netOpen.client) netOpen.client = window.supabase.createClient(SUPA_BASE, SUPA.key);
-  const client = netOpen.client;
-  const ch = client.channel(name, { config: { broadcast: { self: false } } });
+  const client = await netClient();
+  const ch = client.channel(name, { config: { private: NET_PRIVATE, broadcast: { self: false } } });
   ch.on('broadcast', { event: 'm' }, ({ payload }) => onMsg(payload));
   await new Promise((res, rej) => {
     const to = setTimeout(() => rej(new Error('timeout')), 12000);
@@ -2240,9 +2255,8 @@ async function netPresenceOpen() {
   if (NETP.opening) return NETP.opening;
   NETP.opening = (async () => {
     try {
-      await loadSupabase();
-      if (!netOpen.client) netOpen.client = window.supabase.createClient(SUPA_BASE, SUPA.key);
-      const ch = netOpen.client.channel('cc-mesas', { config: { presence: { key: netId() } } });
+      const client = await netClient();
+      const ch = client.channel('cc-mesas', { config: { private: NET_PRIVATE, presence: { key: NET_PKEY } } });
       ch.on('presence', { event: 'sync' }, () => {
         try { const st = ch.presenceState(); NETP.count = Object.values(st).filter(a => a && a.some(x => x && x.code)).length; } catch (e) {}
         const el = $('netcount'); if (el) el.textContent = netCountTxt();
@@ -2951,7 +2965,7 @@ function showTutorial(g, i) {
 }
 let devOpen = false, devBad = false;
 // Modo de pruebas (ver todas las cartas, solo contra bots): en el código solo está la huella SHA-256 de la contraseña, no la contraseña.
-const DEV_HASH = 'f6f0d7ca705bdf4a73429678b60429bd337edb78715e272d56cdb3fce509353c';
+const DEV_HASH = 'e769f97c53f2bc61a1fb44df8f9c5180acc33d819de1e029581ccbca40b64cd4';
 async function devCheck(v) { try { return hexOf(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v.trim().toLowerCase()))) === DEV_HASH; } catch (e) { return false; } }
 function showSettings() {
   panelBack = 'menu';
