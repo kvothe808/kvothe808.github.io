@@ -224,6 +224,11 @@ button{font:inherit;color:inherit}
 .netseat b{font-size:14px}.netseat small{display:block;color:var(--ink-soft);font-size:12px}
 .netseat.me{border-color:var(--gold)}.netseat small.netme{color:var(--gold);font-weight:700}
 .netinvite{width:100%}
+.rxbar{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:10px}.rxbar.wait{opacity:.45;pointer-events:none}
+.btn.rx{padding:6px 10px;font-size:13px;min-height:0}
+.rxfeed{display:flex;flex-direction:column;align-items:center;gap:4px;min-height:24px;margin-top:8px}
+.rxmsg{background:rgba(227,178,79,.15);border:1px solid rgba(227,178,79,.45);border-radius:14px;padding:3px 12px;font-size:14px;animation:rxin .25s ease-out}
+@keyframes rxin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .av.live{position:relative}.av.live::after{content:"";position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-radius:50%;background:#4cc76a;border:2px solid #1b080d}
 .sub.bot{opacity:.75}.sub.off{color:#ff8c8c}
 .netwarn{border:1px solid rgba(226,96,96,.6);background:rgba(226,96,96,.12);border-radius:12px;padding:9px 12px;font-size:13px;line-height:1.4}
@@ -1734,7 +1739,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-02-11';
+const APP_VER = 'cau-2026-11-02-12';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
@@ -2067,7 +2072,7 @@ function showSummary() {
   shareRec(S.rec, 'cau', { score: S.score.slice(), over: !!S.over, winner: S.over ? S.winner : null, falta: !!S.endFalta, mid: !!S.endMid });
   if (S.phase === 'gameEnd') {
     const why = S.endFalta ? L('Se la han jugado en el de nit.', "S'ho han jugat en el de nit.") : L('Han llegado a 40 durante la mano.', 'Han arribat a 40 durant la mà.');
-    showPanel(`<h2>${winTitle()}</h2><p class="big-result">${why}</p><p style="text-align:center">${TEAMN[0]} ${scoreLine(0)} · ${TEAMN[1]} ${scoreLine(1)}</p>${guest ? (NET.match ? gwait : netEndWait()) : ''}<div class="acts">${guest ? gacts : APP.mode === 'cotocau' ? `<button class="btn primary" type="button" data-act="match">${L('Continuar', 'Continuar')}</button>` : NET ? netEndActs() : `<button class="btn" type="button" data-act="menu">${L('Salir al menú', 'Eixir al menú')}</button><button class="btn primary" type="button" data-act="newgame">${L('Nueva partida', 'Partida nova')}</button>`}</div>`);
+    showPanel(`<h2>${winTitle()}</h2><p class="big-result">${why}</p><p style="text-align:center">${TEAMN[0]} ${scoreLine(0)} · ${TEAMN[1]} ${scoreLine(1)}</p>${guest ? (NET.match ? gwait : netEndWait()) : ''}${netRxBar()}<div class="acts">${guest ? gacts : APP.mode === 'cotocau' ? `<button class="btn primary" type="button" data-act="match">${L('Continuar', 'Continuar')}</button>` : NET ? netEndActs() : `<button class="btn" type="button" data-act="menu">${L('Salir al menú', 'Eixir al menú')}</button><button class="btn primary" type="button" data-act="newgame">${L('Nueva partida', 'Partida nova')}</button>`}</div>`);
     return;
   }
   const R = S.summary; if (!R) return;
@@ -2079,7 +2084,7 @@ function showSummary() {
   <tr class="tot"><td>${L('Total de la mano', 'Total de la mà')}</td><td>${R[0].total}</td><td>${R[1].total}</td></tr>
   <tr class="tot"><td>Marcador</td><td>${scoreLine(0)}</td><td>${scoreLine(1)}</td></tr></tbody></table>
   ${(S.duelNotes || []).map(t => `<p>${t}</p>`).join('')}
-  ${guest ? (S.over && !NET.match ? netEndWait() : gwait) : ''}<div class="acts">${guest ? gacts : S.over ? (APP.mode === 'cotocau' ? `<button class="btn primary" type="button" data-act="match">${L('Continuar', 'Continuar')}</button>` : NET ? netEndActs() : `<button class="btn" type="button" data-act="menu">${L('Salir al menú', 'Eixir al menú')}</button><button class="btn primary" type="button" data-act="newgame">${L('Nueva partida', 'Partida nova')}</button>`) : `<button class="btn primary" type="button" data-act="nexthand">${L('Siguiente mano', 'Mà següent')}</button>`}</div>`);
+  ${guest ? (S.over && !NET.match ? netEndWait() : gwait) : ''}${netRxBar()}<div class="acts">${guest ? gacts : S.over ? (APP.mode === 'cotocau' ? `<button class="btn primary" type="button" data-act="match">${L('Continuar', 'Continuar')}</button>` : NET ? netEndActs() : `<button class="btn" type="button" data-act="menu">${L('Salir al menú', 'Eixir al menú')}</button><button class="btn primary" type="button" data-act="newgame">${L('Nueva partida', 'Partida nova')}</button>`) : `<button class="btn primary" type="button" data-act="nexthand">${L('Siguiente mano', 'Mà següent')}</button>`}</div>`);
 }
 
 function rulesCoto() {
@@ -2508,6 +2513,7 @@ async function netHostMsg(m) {
   const seatOf = id => NET.seats.findIndex(x => x.kind === 'human' && x.id === id);
   if (NET.kicked && NET.kicked.has(m.id)) { if (m.t === 'hello' || m.t === 'sit') netSend({ t: 'kicked', id: m.id }); return; }
   if (m.t === 'hello') { const q = seatOf(m.id); if (q > 0) { NET.seats[q].online = true; NET.seats[q].last = Date.now(); if (NET.seats[q].away && G) netSetAway(q, false); } if (NET.started) { netSend({ t: 'start' }); netSchedule(); } else netLobby(); return; }
+  if (m.t === 'rx') { const q = seatOf(m.id); if (q > 0) netRxHost(NET.seats[q], m.k); return; }
   if (m.t === 'ping') { const q = seatOf(m.id); if (q > 0) { const was = NET.seats[q].online; NET.seats[q].last = Date.now(); NET.seats[q].online = true; if (!was) { NAMES[q] = NET.seats[q].name; netSchedule(); if (NET.started) render(); if (NET.started && !busy) loop(); } } return; }
   if (m.t === 'sit' && !NET.started) {
     const p = m.seat; if (!(p >= 1 && p <= 3) || NET.seats[p].kind !== 'free') return netLobby();
@@ -2571,6 +2577,27 @@ function netBackLobby() {
   applyLang(SETTINGS.lang, SETTINGS.names);
   netLobby();
 }
+// Frases rápidas: solo en la pantalla de resultado entre repartos (nadie tiene cartas, así que no sirven para hacer señas).
+// Lista fija, sin texto libre. El anfitrión las valida y las reenvía a todos; se ven en el panel de resultado y desaparecen al repartir.
+const NET_RX = ['👏', '😂', '😅', '🔥', 'Bona!', 'Quina sort!', 'Ens han cosit', 'Vinga, la següent'];
+const netRxBar = () => NET && NET.started ? `<div class="rxbar">${NET_RX.map((t, k) => `<button class="btn rx" type="button" data-act="net-rx" data-k="${k}">${t}</button>`).join('')}</div><div class="rxfeed" id="rxfeed"></div>` : '';
+const netRxOpen = () => isCoto() ? !!G && ['handEnd', 'partidaEnd', 'cotoEnd'].includes(G.phase) : !!S && ['handEnd', 'gameEnd'].includes(S.phase);
+function netRxShow(n, k) {
+  const f = $('rxfeed'), t = NET_RX[k]; if (!f || t == null) return;   // solo si está abierta la pantalla de resultado
+  const d = document.createElement('div'); d.className = 'rxmsg'; d.innerHTML = `<b>${esc(n)}</b> ${t}`;
+  f.appendChild(d); while (f.children.length > 4) f.firstChild.remove();
+  setTimeout(() => d.remove(), 8000);
+}
+function netRxHost(st, k) {
+  if (!NET || NET.role !== 'host' || !netRxOpen() || !(k >= 0 && k < NET_RX.length)) return;
+  const now = Date.now(); if (now - (st.rxAt || 0) < 1200) return; st.rxAt = now;   // como mucho una cada segundo y pico
+  netRxShow(st.name, k); netSend({ t: 'rxs', n: st.name, k });
+}
+function netRxSend(k) {
+  if (!NET) return;
+  if (NET.role === 'host') netRxHost(NET.seats[0], k); else netSend({ t: 'rx', id: NET.id, k });
+  const bar = document.querySelector('.rxbar'); if (bar) { bar.classList.add('wait'); setTimeout(() => bar.classList.remove('wait'), 1200); }
+}
 // Botones del anfitrión al final de la partida online
 const netEndActs = () => `<button class="btn" type="button" data-act="net-lobby">${L('Volver a la sala', 'Tornar a la sala')}</button><button class="btn primary" type="button" data-act="net-again">${L('Otra partida con los mismos', 'Una altra amb els mateixos')}</button>`;
 const netEndWait = () => `<p class="desc" style="text-align:center">${L(`Esperando a que ${esc(NET.host || 'el anfitrión')} decida si jugáis otra…`, `Esperant que ${esc(NET.host || "l'amfitrió")} decidisca si en jugueu una altra…`)}</p>`;
@@ -2626,6 +2653,7 @@ function netGuestMsg(m) {
   }
   if (m.t === 'start') { NET.started = true; return; }
   if (m.t === 'kick' || (m.t === 'kicked' && m.id === NET.id)) { const n = NET.host || L('El anfitrión', 'L\'amfitrió'); netLeave(true); showPanel(`<h2>${L('Fuera de la sala', 'Fora de la sala')}</h2><p>${L(`${esc(n)} te ha sacado de la sala.`, `${esc(n)} t'ha tret de la sala.`)}</p><div class="acts"><button class="btn primary" type="button" data-act="menu">${L('Menú', 'Menú')}</button></div>`); return; }
+  if (m.t === 'rxs') return netRxShow(m.n, m.k);
   if (m.t === 'ev') return netGuestEv(m.e);
   if (m.t === 'bye') { const n = NET.host || L('El anfitrión', 'L\'amfitrió'); netLeave(true); showPanel(`<h2>${L('Partida cerrada', 'Partida tancada')}</h2><p>${L(`${esc(n)} ha cerrado la sala.`, `${esc(n)} ha tancat la sala.`)}</p><div class="acts"><button class="btn primary" type="button" data-act="menu">${L('Menú', 'Menú')}</button></div>`); return; }
   if (m.t === 'cview') {
@@ -2665,7 +2693,7 @@ function netGuestTick() {
 function netGuestSummary() {
   const H = G.handSummary; const sc = i => { const [n, w] = coScoreTxt(G.score[i]); return `${n} ${w}`; };
   const title = G.phase === 'handEnd' ? L('Nadie llega a 101: mano de vueltas', 'Ningú arriba a 101: mà de voltes') : G.phase === 'cotoEnd' ? (G.winner === 0 ? L('¡Habéis ganado el coto!', 'Heu guanyat el coto!') : L('Han ganado el coto ellos', 'Han guanyat el coto ells')) : (G.partidaWinner === 0 ? L('¡Ganáis la partida!', 'Guanyeu la partida!') : L('Ellos ganan la partida', 'Ells guanyen la partida'));
-  showPanel(`<h2>${title}</h2><p class="big-result">${TEAMN[0]} ${sc(0)} · ${TEAMN[1]} ${sc(1)}</p><p style="text-align:center">Coto ${G.wins[0]}–${G.wins[1]}</p><p class="desc" style="text-align:center">${G.phase === 'cotoEnd' && !NET.match ? '' : L('Esperando a que el anfitrión siga…', 'Esperant que l\'amfitrió continue…')}</p>${G.phase === 'cotoEnd' && !NET.match ? netEndWait() : ''}<div class="acts"><button class="btn" type="button" data-act="net-leave" data-keep="1">${L('Salir', 'Eixir')}</button></div>`);
+  showPanel(`<h2>${title}</h2><p class="big-result">${TEAMN[0]} ${sc(0)} · ${TEAMN[1]} ${sc(1)}</p><p style="text-align:center">Coto ${G.wins[0]}–${G.wins[1]}</p><p class="desc" style="text-align:center">${G.phase === 'cotoEnd' && !NET.match ? '' : L('Esperando a que el anfitrión siga…', 'Esperant que l\'amfitrió continue…')}</p>${G.phase === 'cotoEnd' && !NET.match ? netEndWait() : ''}${netRxBar()}<div class="acts"><button class="btn" type="button" data-act="net-leave" data-keep="1">${L('Salir', 'Eixir')}</button></div>`);
 }
 function netAskLeave() {
   const host = NET.role === 'host';
@@ -2993,6 +3021,7 @@ $('panel').addEventListener('click', e => {
   if (a === 'net-leave') { netLeave(); showMenu(); }
   if (a === 'net-stay') closePanel();
   if (a === 'net-invite') netInvite();
+  if (a === 'net-rx') netRxSend(+b.dataset.k);
   if (a === 'net-mode') netSetMode(b.dataset.mode);
   if (a === 'net-again') netStart();
   if (a === 'net-lobby') netBackLobby();
@@ -3270,7 +3299,7 @@ function showCotoSummary() {
   <tr class="tot"><td>${L('Total de la mano', 'Total de la mà')}</td><td>${H[0].total}</td><td>${H[1].total}</td></tr>
   <tr class="tot"><td>${L('Marcador', 'Marcador')}</td><td>${sc(0)}</td><td>${sc(1)}</td></tr>
   <tr class="tot"><td>Coto (${L('al mejor de', 'al millor de')} ${G.bestOf})</td><td>${G.wins[0]}</td><td>${G.wins[1]}</td></tr></tbody></table>
-  <div class="acts">${btn}</div>`);
+  ${netRxBar()}<div class="acts">${btn}</div>`);
 }
 
 /* ---------- CotoCau: coto, después Cau y, si cada pareja gana uno, sorteo «llargues coto, curtes cau» ---------- */
