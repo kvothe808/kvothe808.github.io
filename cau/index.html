@@ -1727,7 +1727,7 @@ let S = null, busy = false, fx = null, nextConfirm = false, narr = '';
 const SPEEDS = [['lento', 1.6], ['normal', 1], ['rápido', 0.55]];
 let speedIx = SETTINGS.speed >= 0 && SETTINGS.speed < 3 ? SETTINGS.speed : 1;
 /* ---------- compartir partidas (Supabase: la clave pública solo permite insertar) ---------- */
-const APP_VER = 'cau-2026-11-02-7';
+const APP_VER = 'cau-2026-11-02-8';
 const SUPA = { url: 'https://fzctetcrmrtxwzisxsig.supabase.co/rest/v1/partidas', key: 'sb_publishable_dg8jQx8W7KcVCcEg2KPVnA_ExvQR1gb' };
 function deviceId() {
   try { let id = localStorage.getItem('cau.uid'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); localStorage.setItem('cau.uid', id); } return id; } catch (e) { return 'anon'; }
@@ -1881,7 +1881,7 @@ function renderScore(i) {
 }
 
 function render() {
-  if (!TUTG && $('coach') && !(NET && NET.banner)) $('coach').hidden = true;
+  if (!TUTG && $('coach') && !netBannerHTML()) $('coach').hidden = true;
   if (NET && NET.role === 'host' && NET.started) netSchedule();
   const bl = $('btnLast'); if (bl) { bl.hidden = !(isCoto() && G && G.lastTrick); bl.textContent = L('Última baza', 'Última basa'); }
   if (isCoto() && G) return renderCoto();
@@ -2233,7 +2233,12 @@ function netGuestEv(e) {
     else if (e.k === 'callout') callout(e.txt, e.sub, false);
   }).catch(() => {});
 }
-const humanSeat = p => p === 0 || !!(NET && NET.role === 'host' && NET.started && NET.seats[p].kind === 'human' && NET.seats[p].online);
+function netBannerHTML() {
+  if (!NET) return null;
+  if (NET.role === 'guest' && G && G.away) return `🤖 ${L('Un bot está jugando por ti porque llevabas un rato sin jugar.', 'Un bot està jugant per tu perquè portaves una estona sense jugar.')} <button class="btn primary" type="button" data-net="back">${L('Vuelvo a jugar', 'Torne a jugar')}</button>`;
+  return NET.banner || null;
+}
+const humanSeat = p => p === 0 || !!(NET && NET.role === 'host' && NET.started && NET.seats[p].kind === 'human' && NET.seats[p].online && !NET.seats[p].away);
 function netCanteWait() {
   if (NET.role !== 'host' || G.trick.length) return false;
   for (const q of [1, 2, 3]) if (humanSeat(q) && G.turn !== q && coCantesFor(G, q).length && (G.remotePass || {})[q] !== G.trickNo) return true;
@@ -2271,7 +2276,7 @@ function netLobby() {
   const rows = [1, 2, 3].map(p => {
     const st = NET.seats[p];
     const who = st.kind === 'human' ? `<small>👤 ${esc(st.name)}${st.online ? '' : ' · ' + L('desconectado', 'desconnectat')}</small>` : st.kind === 'free' ? `<small>${L('Esperando a un jugador…', 'Esperant un jugador…')}</small>` : `<small>Bot · ${esc(NAMES[p])}</small>`;
-    const btn = st.kind === 'human' ? '' : `<button class="btn" type="button" data-act="net-seat" data-seat="${p}">${st.kind === 'bot' ? L('Para una persona', 'Per a una persona') : L('Poner bot', 'Posar bot')}</button>`;
+    const btn = st.kind === 'human' ? `<button class="btn" type="button" data-act="net-kick" data-seat="${p}">${L('Sacar', 'Traure')}</button>` : `<button class="btn" type="button" data-act="net-seat" data-seat="${p}">${st.kind === 'bot' ? L('Para una persona', 'Per a una persona') : L('Poner bot', 'Posar bot')}</button>`;
     return `<div class="netseat"><div><b>${seatName(p)}</b>${who}</div>${btn}</div>`;
   }).join('');
   const waiting = NET.seats.some(x => x.kind === 'free');
@@ -2281,11 +2286,43 @@ function netLobby() {
   cover();
   netSend({ t: 'lobby', host: NET.name, seats: NET.seats.map((x, p) => ({ kind: x.kind, name: x.kind === 'human' || x.kind === 'host' ? x.name : NAMES[p] })) });
 }
+// Sacar a alguien de la sala antes de empezar (no puede volver a sentarse en esta sala)
+function netHostKick(p) {
+  const st = NET.seats[p]; if (!st || st.kind !== 'human' || NET.started) return;
+  (NET.kicked = NET.kicked || new Set()).add(st.id);
+  try { NET.priv[st.id] && NET.priv[st.id].send({ t: 'kick' }); } catch (e) {}
+  const ch = NET.priv[st.id]; delete NET.priv[st.id]; setTimeout(() => { try { ch && ch.close(); } catch (e) {} }, 500);
+  NET.seats[p] = { kind: 'free' }; netLobby();
+}
+// Quien tarda: si al anfitrión le toca esperar a una persona más de 30 segundos, puede poner un bot en su lugar
+// (no la echa: la persona ve un aviso y vuelve a jugar cuando quiera)
+const NET_WAIT = 30000;
+function netWaitCheck() {
+  if (!NET || NET.role !== 'host') return;
+  let W = [];
+  if (NET.started && G && G.phase === 'play' && !busy) {
+    if (G.turn !== 0 && humanSeat(G.turn)) W = [G.turn];
+    else if (netCanteWait()) W = [1, 2, 3].filter(q => humanSeat(q) && G.turn !== q && coCantesFor(G, q).length && (G.remotePass || {})[q] !== G.trickNo);
+  }
+  const key = W.length ? `${G.partidaNo}.${G.handNo}.${G.trickNo}.${G.trick.length}.${W.join()}` : '';
+  if (key !== NET.waitKey) { NET.waitKey = key; NET.waitSince = Date.now(); }
+  const late = W.length && Date.now() - NET.waitSince >= NET_WAIT;
+  const b = late ? W.map(q => `⏳ ${L(`<b>${esc(NET.seats[q].name)}</b> lleva más de 30 segundos sin jugar.`, `<b>${esc(NET.seats[q].name)}</b> porta més de 30 segons sense jugar.`)} <button class="btn" type="button" data-net="away" data-seat="${q}">${L('Poner un bot en su sitio', 'Posar un bot al seu lloc')}</button>`).join('<br>') : null;
+  if (b !== (NET.banner || null)) { NET.banner = b; if (G) render(); }
+}
+function netSetAway(q, away) {
+  const st = NET && NET.seats[q]; if (!st || st.kind !== 'human' || !!st.away === away) return;
+  st.away = away; if (!away) st.last = Date.now();
+  NET.waitKey = ''; NET.banner = null;
+  coSay(G, away ? L(`Un bot juega por ${st.name}.`, `Un bot juga per ${st.name}.`) : L(`${st.name} vuelve a jugar.`, `${st.name} torna a jugar.`));
+  netSchedule(); render(); if (!busy) cotoLoop();
+}
 function netHostSeat(p) { const st = NET.seats[p]; if (st.kind === 'bot') NET.seats[p] = { kind: 'free' }; else if (st.kind === 'free') NET.seats[p] = { kind: 'bot' }; netLobby(); }
 async function netHostMsg(m) {
   if (!NET || NET.role !== 'host' || !m) return;
   const seatOf = id => NET.seats.findIndex(x => x.kind === 'human' && x.id === id);
-  if (m.t === 'hello') { const q = seatOf(m.id); if (q > 0) { NET.seats[q].online = true; NET.seats[q].last = Date.now(); } if (NET.started) { netSend({ t: 'start' }); netSchedule(); } else netLobby(); return; }
+  if (NET.kicked && NET.kicked.has(m.id)) { if (m.t === 'hello' || m.t === 'sit') netSend({ t: 'kicked', id: m.id }); return; }
+  if (m.t === 'hello') { const q = seatOf(m.id); if (q > 0) { NET.seats[q].online = true; NET.seats[q].last = Date.now(); if (NET.seats[q].away && G) netSetAway(q, false); } if (NET.started) { netSend({ t: 'start' }); netSchedule(); } else netLobby(); return; }
   if (m.t === 'ping') { const q = seatOf(m.id); if (q > 0) { const was = NET.seats[q].online; NET.seats[q].last = Date.now(); NET.seats[q].online = true; if (!was) { NAMES[q] = NET.seats[q].name; netSchedule(); if (NET.started && !busy) cotoLoop(); } } return; }
   if (m.t === 'sit' && !NET.started) {
     if (seatOf(m.id) > 0) return;
@@ -2295,7 +2332,10 @@ async function netHostMsg(m) {
     return netLobby();
   }
   if (m.t === 'act' && NET.started && G) {
-    const q = seatOf(m.id); if (q < 1 || G.phase !== 'play' || busy) return netSchedule();
+    const q = seatOf(m.id); if (q < 1) return;
+    if (NET.seats[q].away) { netSetAway(q, false); if (m.a === 'back') return; }   // juega o pulsa «Vuelvo»: recupera su sitio
+    if (m.a === 'back') return netSchedule();
+    if (G.phase !== 'play' || busy) return netSchedule();
     if (m.a === 'play' && G.turn === q && coLegal(G, q).some(c => c.id === m.card)) { busy = true; try { await coDoPlay(q, m.card); } finally { busy = false; } return cotoLoop(); }
     if (m.a === 'sing' && coCantesFor(G, q).includes(m.s)) { busy = true; try { coSing(G, q, m.s); render(); await coDrain(); } finally { busy = false; } render(); return cotoLoop(); }
     if (m.a === 'nosing') { G.remotePass = G.remotePass || {}; G.remotePass[q] = G.trickNo; render(); return cotoLoop(); }
@@ -2306,6 +2346,7 @@ async function netHostMsg(m) {
 function netHostTick() {
   if (!NET || NET.role !== 'host') return;
   netSend({ t: 'ping' });
+  netWaitCheck();
   const now = Date.now();
   for (const q of [1, 2, 3]) { const st = NET.seats[q]; if (st.kind !== 'human') continue; const on = now - (st.last || 0) < 15000; if (on !== st.online) { st.online = on; if (NET.started) { netSchedule(); if (!on && !busy) cotoLoop(); } else netLobby(); } }
 }
@@ -2335,7 +2376,7 @@ function netView(g) {
     canSing: tt(G.canSing), partidaWinner: tt(G.partidaWinner), winner: tt(G.winner),
     dealer: rot(G.dealer), turn: rot(G.turn), leader: rot(G.leader), trickNo: G.trickNo, swapped: G.swapped, sung: G.sung.slice(), trump: G.trump, pinta: G.pinta,
     trick: G.trick.map(x => ({ p: rot(x.p), c: x.c })), lastTrick: G.lastTrick ? { ...G.lastTrick, cards: G.lastTrick.cards.map(x => ({ p: rot(x.p), c: x.c })), winner: rot(G.lastTrick.winner) } : null,
-    stock: G.stock.map((c, k) => k === G.stock.length - 1 ? c : { id: -100 - k, r: 0, s: 0 }), hands, names, cantePass: (G.remotePass || {})[g] ?? null,
+    stock: G.stock.map((c, k) => k === G.stock.length - 1 ? c : { id: -100 - k, r: 0, s: 0 }), hands, names, cantePass: (G.remotePass || {})[g] ?? null, away: !!NET.seats[g].away,
     ui: { dv: coDealView ? { n: [0, 1, 2, 3].map(v => coDealView.n[(v + g) % 4]), stock: coDealView.stock } : null, showLast: coShowLast, reveal: coReveal, pend: coPend, hide: [...coHide], busy: busy || !!coFx }
   };
 }
@@ -2364,6 +2405,7 @@ function netGuestMsg(m) {
     return;
   }
   if (m.t === 'start') { NET.started = true; return; }
+  if (m.t === 'kick' || (m.t === 'kicked' && m.id === NET.id)) { const n = NET.host || L('El anfitrión', 'L\'amfitrió'); netLeave(true); showPanel(`<h2>${L('Fuera de la sala', 'Fora de la sala')}</h2><p>${L(`${esc(n)} te ha sacado de la sala.`, `${esc(n)} t'ha tret de la sala.`)}</p><div class="acts"><button class="btn primary" type="button" data-act="menu">${L('Menú', 'Menú')}</button></div>`); return; }
   if (m.t === 'ev') return netGuestEv(m.e);
   if (m.t === 'bye') { const n = NET.host || L('El anfitrión', 'L\'amfitrió'); netLeave(true); showPanel(`<h2>${L('Partida cerrada', 'Partida tancada')}</h2><p>${L(`${esc(n)} ha cerrado la sala.`, `${esc(n)} ha tancat la sala.`)}</p><div class="acts"><button class="btn primary" type="button" data-act="menu">${L('Menú', 'Menú')}</button></div>`); return; }
   if (m.t === 'view') {
@@ -2709,6 +2751,7 @@ $('panel').addEventListener('click', e => {
   if (a === 'net-host') netHost(($('netname') || {}).value);
   if (a === 'net-join') netJoin((($('netcode') || {}).value || '').trim().toUpperCase(), ($('netname') || {}).value);
   if (a === 'net-seat') netHostSeat(+b.dataset.seat);
+  if (a === 'net-kick') netHostKick(+b.dataset.seat);
   if (a === 'net-start') netStart();
   if (a === 'net-sit') netSend({ t: 'sit', id: NET.id, name: NET.name, seat: +b.dataset.seat });
   if (a === 'net-leave') { netLeave(); showMenu(); }
@@ -2734,6 +2777,11 @@ $('panel').addEventListener('change', e => {
   SETTINGS.names[+m[1] - 1] = e.target.value.trim() || ['Toni','Maria','Vicent'][+m[1] - 1];
   applyLang(SETTINGS.lang, SETTINGS.names); saveSettings(); showSettings(); render();
 });
+$('coach').addEventListener('click', e => {
+  const b = e.target.closest('[data-net]'); if (!b || !NET) return;
+  if (b.dataset.net === 'away' && NET.role === 'host') netSetAway(+b.dataset.seat, true);
+  if (b.dataset.net === 'back' && NET.role === 'guest') { netSend({ t: 'act', id: NET.id, a: 'back' }); b.disabled = true; }
+});
 $('btnRules').addEventListener('click', () => { panelBack = null; showRules(); });
 $('btnLog').addEventListener('click', () => { panelBack = null; showLog(); });
 $('btnLast').addEventListener('click', () => { panelBack = null; showLastTrick(); });
@@ -2758,7 +2806,8 @@ function renderCoto() {
   [1, 2, 3].forEach(coRenderSeat);
   coRenderTable(); coRenderHand(); coRenderBottom();
   $('narr').innerHTML = narr;
-  if (NET && NET.banner) { $('coach').hidden = false; $('coach').innerHTML = NET.banner; }
+  const nb = netBannerHTML();
+  if (nb) { $('coach').hidden = false; $('coach').innerHTML = nb; }
   else { $('coach').hidden = !TUTG; if (TUTG) $('coach').innerHTML = tutCoach(); }
   if (['handEnd', 'partidaEnd', 'cotoEnd'].includes(G.phase) && $('overlay').hidden && !busy) showCotoSummary();
 }
